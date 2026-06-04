@@ -10,18 +10,47 @@
 */
 
 import 'package:flutter/material.dart';
+import 'pages/pageMain.dart';
+import 'pages/page3x3.dart';
 
 void main() {
-  runApp(const MainApp());
+  runApp(const MaterialApp(
+    home: MainApp(),
+  ));
 }
 
-//maybe convert to separate json file and just import it
-var cubeInfo = [
-  {"title": "3x3", "link": "./link"},
-  {"title": "2x2", "link": "./link2"}
-];
 class MainApp extends StatelessWidget {
   const MainApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: MainScreen(),
+    );
+  }
+  
+}
+
+class MainScreen extends StatefulWidget{
+  const MainScreen({super.key});
+
+  @override
+  State<MainScreen> createState() =>
+    // TODO: implement createState
+    _MainScreen();
+  
+}
+
+class _MainScreen extends State<MainScreen>{
+  int _currentIndex = 0;
+
+  // 2. Put your imported page widgets into the list
+  final List<Widget> _pages = [
+    const MainPage(),
+    const Page3x3(),
+    const Page3x3(),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -34,60 +63,26 @@ class MainApp extends StatelessWidget {
             child: Text("Solve My Cube"),
           ),
         ),
-        body: GridView.count(
-          crossAxisCount: 2,
-          children: List.generate(cubeInfo.length, (generator){
-            return CubeWidget(cubeInfo[generator]["title"]!);
-          }),
+        body: IndexedStack(
+          index: _currentIndex,
+          children: _pages,
         ),
         bottomNavigationBar: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          onTap: (int index) {
+            setState(() {
+              _currentIndex = index;
+            });
+          },
           items: const <BottomNavigationBarItem>[
             BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-            BottomNavigationBarItem(icon: Icon(Icons.timer), label: "Timer"),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.timer), 
+              label: "Timer",
+              ),
             BottomNavigationBarItem(icon: Icon(Icons.settings), label: "Setting")
           ],
         ),
-      ),
-    );
-  }
-}
-class CubeWidget extends StatefulWidget {
-  final String title; 
-
-  const CubeWidget(this.title, {super.key});
-
-  @override
-  State<CubeWidget> createState() => _CubeWidgetState();
-}
-
-class _CubeWidgetState extends State<CubeWidget> {
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(5),
-      child: Container(
-        height: 100,
-        width: 100,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment(0.8, 1),
-            colors: <Color>[
-            Color.fromARGB(58, 90, 175, 194),
-            Color.fromARGB(180, 0, 208, 255),
-            ],
-        ),),
-        child: Align(
-         alignment: Alignment.bottomCenter,
-          child: Text.rich(
-              TextSpan(
-                text: widget.title,
-                style: TextStyle(
-                    fontSize: 32,
-                  ),
-                ),
-              ),
-            ),
       ),
     );
   }
