@@ -1,0 +1,51 @@
+import 'package:flutter/material.dart';
+
+class PageCube extends StatelessWidget {
+
+  final String title;
+
+  const PageCube({super.key, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return  Scaffold(
+      appBar: AppBar(
+        title: Text(
+          title
+        ),
+      ),
+      body: Center(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          spacing: 24,
+          children: [
+            Container(
+              width: 400,
+              height: 400,
+              color: Color.fromARGB(230, 252, 0, 0),
+              /* margin: EdgeInsetsGeometry.directional(
+                bottom: 24
+              ), */
+            ),
+            ElevatedButton.icon(
+              onPressed: ()=>{}, 
+              icon: Icon(Icons.camera_alt),
+              label: Text("Camera")
+            ),
+            Divider(
+              height: 15,
+              thickness: 2,
+              indent: 64,
+              endIndent: 64,
+            ),
+            ElevatedButton.icon(
+              onPressed: ()=>{}, 
+              icon: Icon(Icons.input),
+              label: Text("Manul input")
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}

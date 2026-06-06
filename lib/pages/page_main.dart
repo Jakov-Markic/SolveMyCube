@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import './library.dart' as page;
 
 //maybe convert to separate json file and just import it
-var cubeInfo = [
+const List<Map<String, String>> cubeInfo = [
   {"title": "3x3", "link": "./pages/page3x3.dart"},
-  {"title": "2x2", "link": "./"}
+  {"title": "2x2", "link": "./pages/page3x3.dart"}
 ];
 
 
@@ -13,16 +14,14 @@ class MainPage extends StatelessWidget{
   @override
   Widget build(BuildContext context) {
     // TODO: implement build
-    return MaterialApp(
-      home: Scaffold(
+    return Scaffold(
         body: GridView.count(
           crossAxisCount: 2,
           children: List.generate(cubeInfo.length, (generator){
             return CubeWidget(cubeInfo[generator]["title"]!);
           }),
         ),
-      )
-    );
+      );
   }
 }
 
@@ -41,11 +40,12 @@ class _CubeWidgetState extends State<CubeWidget> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(5),
+      
       child: Container(
-        
         height: 100,
         width: 100,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment(0.8, 1),
@@ -53,21 +53,29 @@ class _CubeWidgetState extends State<CubeWidget> {
             Color.fromARGB(58, 90, 175, 194),
             Color.fromARGB(180, 0, 208, 255),
             ],
-        ),),
-        child: Align(
-         alignment: Alignment.bottomCenter,
-          child: Text.rich(
-              TextSpan(
-                text: widget.title,
-                style: TextStyle(
-                    fontSize: 32,
-                  ),
-                ),
+          ),
+        ),
+        child: ElevatedButton(
+          onPressed: ()=>{
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => page.PageCube(title: widget.title),
               ),
+            )
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2))
+          ),
+          child: Text(
+            widget.title,
+            style: TextStyle(
+              fontSize: 32,
             ),
+          ),
+        ),
       ),
-
     );
   }
-  
 }

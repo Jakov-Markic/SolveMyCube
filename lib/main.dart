@@ -10,8 +10,7 @@
 */
 
 import 'package:flutter/material.dart';
-import 'pages/pageMain.dart';
-import 'pages/page3x3.dart';
+import 'pages/library.dart' as page;
 
 void main() {
   runApp(const MaterialApp(
@@ -47,9 +46,9 @@ class _MainScreen extends State<MainScreen>{
 
   // 2. Put your imported page widgets into the list
   final List<Widget> _pages = [
-    const MainPage(),
-    const Page3x3(),
-    const Page3x3(),
+    const page.MainPage(),
+    const page.PageSettings(),
+    const page.PageTimer(),
   ];
 
   @override
