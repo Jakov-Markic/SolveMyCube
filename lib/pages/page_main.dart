@@ -9,6 +9,7 @@ const List<Map<String, String>> cubeInfo = [
 
 
 class MainPage extends StatelessWidget{
+
   const MainPage({super.key});
 
   @override

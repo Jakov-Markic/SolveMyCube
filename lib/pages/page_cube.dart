@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:solve_my_cube/globals.dart';
+import './page_camera.dart';
+import './page_camera.dart';
 
 class PageCube extends StatelessWidget {
 
@@ -28,7 +31,13 @@ class PageCube extends StatelessWidget {
               ), */
             ),
             ElevatedButton.icon(
-              onPressed: ()=>{}, 
+              onPressed: ()=>{
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => PageCamera(camera: globalCameras.first),
+                  ),
+                )
+              }, 
               icon: Icon(Icons.camera_alt),
               label: Text("Camera")
             ),

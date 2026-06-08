@@ -9,21 +9,30 @@
 
 */
 
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'pages/library.dart' as page;
+import 'globals.dart';
 
-void main() {
-  runApp(const MaterialApp(
-    home: MainApp(),
-  ));
+Future<void> main() async {
+
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Permission.camera.request();
+
+  globalCameras = await availableCameras();
+
+  runApp(MainApp());
 }
 
 class MainApp extends StatelessWidget {
+
   const MainApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: MainScreen(),
     );
@@ -32,6 +41,7 @@ class MainApp extends StatelessWidget {
 }
 
 class MainScreen extends StatefulWidget{
+
   const MainScreen({super.key});
 
   @override
@@ -43,13 +53,20 @@ class MainScreen extends StatefulWidget{
 
 class _MainScreen extends State<MainScreen>{
   int _currentIndex = 0;
+  late List<Widget> _pages;
 
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    _pages = [
+      const page.MainPage(),
+      const page.PageSettings(),
+      const page.PageTimer(),
+    ];
+  }
   // 2. Put your imported page widgets into the list
-  final List<Widget> _pages = [
-    const page.MainPage(),
-    const page.PageSettings(),
-    const page.PageTimer(),
-  ];
+  
 
   @override
   Widget build(BuildContext context) {
@@ -62,10 +79,8 @@ class _MainScreen extends State<MainScreen>{
             child: Text("Solve My Cube"),
           ),
         ),
-        body: IndexedStack(
-          index: _currentIndex,
-          children: _pages,
-        ),
+        body: _pages[_currentIndex],
+        
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: _currentIndex,
           onTap: (int index) {
