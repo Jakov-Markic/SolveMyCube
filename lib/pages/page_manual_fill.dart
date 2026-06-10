@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:path/path.dart';
+import './page_solution.dart';
 
 const defaultColorValue = [
   Colors.red, //F
@@ -10,7 +10,19 @@ const defaultColorValue = [
   Colors.yellow, //D
 ];
 
-class PageManualFill extends StatelessWidget {
+class PageManualFill extends StatefulWidget{
+  const PageManualFill({super.key});
+
+  @override
+  State<StatefulWidget> createState() => _PageManualFillState();
+}
+
+class _PageManualFillState extends State<PageManualFill> {
+
+  Color _selectedColor = defaultColorValue[0];
+  bool _isComplete = false;
+
+  List<int> numberOfCellsRemaining = List.filled(6, 9);
   
   @override
   Widget build(BuildContext context) {
@@ -29,14 +41,43 @@ class PageManualFill extends StatelessWidget {
             width: 32,
             height: 32,
           ),
-          Divider(
+          const Divider(
             color: Colors.black87,
             thickness: 15,
           ),
-          RubiksFace(),
-          //maybe create this color list to be separate widget
-          ColorPickerRow(),
-            
+          RubiksFace(
+            selectedColor: _selectedColor, 
+            isRubikComplete: (value){
+              setState(() {
+                _isComplete = value;
+              });
+            },
+          ),
+          ColorPickerRow(
+            numberOfCellsRemaining: [...numberOfCellsRemaining],
+            onColorSelected: (color)=>setState(() {
+              _selectedColor = color;
+            })
+          ),
+          const Divider(
+            color: Colors.black87,
+            thickness: 15,
+          ),
+          if(_isComplete)...[
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (builder)=>PageSolution())
+                );
+              },
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text("Solve"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -44,14 +85,21 @@ class PageManualFill extends StatelessWidget {
 }
 
 class ColorPickerRow extends StatefulWidget {
-  const ColorPickerRow({super.key});
+  final ValueChanged<Color> onColorSelected;
+  final List<int> numberOfCellsRemaining;
+
+  const ColorPickerRow({
+    super.key, 
+    required this.onColorSelected,
+    required this.numberOfCellsRemaining,
+  });
 
   @override
   State<ColorPickerRow> createState() => _ColorPickerRowState();
 }
 
 class _ColorPickerRowState extends State<ColorPickerRow> {
-  int? selectedIndex; // null = nothing selected
+  int selectedIndex = 1;
 
   @override
   Widget build(BuildContext context) {
@@ -61,7 +109,7 @@ class _ColorPickerRowState extends State<ColorPickerRow> {
         padding: EdgeInsets.all(16),
         scrollDirection: Axis.horizontal,
         itemCount: defaultColorValue.length + 1,
-        separatorBuilder: (context, index) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           if(index == 0){
             return SizedBox(
@@ -80,7 +128,9 @@ class _ColorPickerRowState extends State<ColorPickerRow> {
               selected: selectedIndex == index,
               onTap: () => setState(() {
                 selectedIndex = index;
+                widget.onColorSelected(defaultColorValue[index - 1]);
               }),
+              numberOfCellsRemaining: widget.numberOfCellsRemaining[index - 1],
               )
             );
         },
@@ -90,11 +140,12 @@ class _ColorPickerRowState extends State<ColorPickerRow> {
   }
 }
 
-class ColorPickerTile extends StatelessWidget {  // ✅ no longer needs StatefulWidget
+class ColorPickerTile extends StatelessWidget {
   final Color colorValue;
   final double height, width;
   final bool selected;
-  final VoidCallback onTap;  // ✅ callback to notify parent
+  final VoidCallback onTap;  
+  final int numberOfCellsRemaining;
 
   const ColorPickerTile({
     super.key,
@@ -103,70 +154,163 @@ class ColorPickerTile extends StatelessWidget {  // ✅ no longer needs Stateful
     required this.width,
     required this.selected,
     required this.onTap,
+    required this.numberOfCellsRemaining,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,  // ✅ just calls parent's setState
-      child: Container(
-        width: width,
-        height: height,
-        decoration: BoxDecoration(
-          color: selected ? colorValue.withOpacity(0.5) : colorValue,
-          border: Border.all(
-            color: selected ? Colors.white : Colors.black,
-            width: selected ? 3 : 1,
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            width: width,
+            height: height,
+            decoration: BoxDecoration(
+              color: selected ? colorValue.withOpacity(0.5) : colorValue,
+              border: Border.all(
+                color: selected ? Colors.white : Colors.black,
+                width: selected ? 3 : 1,
+              ),
+              borderRadius: BorderRadius.circular(2),
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  right: 4,
+                  bottom: 4,
+                  child: Text("$numberOfCellsRemaining"),
+                ),
+              ],
+            ),
           ),
-          borderRadius: BorderRadius.circular(2),
-        ),
+          
+        ],
       ),
     );
   }
 }
-class RubiksFace extends StatelessWidget{
+
+class RubiksFace extends StatefulWidget{
+  final Color selectedColor;
+  
+  final Function(bool value) isRubikComplete;
+
+  const RubiksFace({
+    super.key, 
+    required this.selectedColor,
+    required this.isRubikComplete
+  });
+
+  @override
+  State<StatefulWidget> createState() => _RubiksFaceState();
+}
+
+class _RubiksFaceState extends State<RubiksFace>{
+
+  static const _faceLabels = ['F', 'R', 'U', 'B', 'L', 'D'];
+
+  final List<List<List<Color?>>> _allFaces = 
+    List.generate(6, (_) => 
+      List.generate(3, (_) =>
+        List.generate(3, (_) => null,
+      )
+    )
+  );
+
+  int _currentFace = 0;
+
+  void _paintCell(int row, int col) {
+    setState(() {
+      _allFaces[_currentFace][row][col] = widget.selectedColor;
+    });
+    widget.isRubikComplete(_isComplete);
+  }
+
+  void _switchFace(int faceIndex) {
+    setState(() => _currentFace = faceIndex);
+  }
+
+  bool get _isComplete => _allFaces.every(
+    (face) => face.every(
+      (row) => row.every(
+        (cell) => cell != null, 
+      )
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     // TODO: implement build
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _buildGrid(),
+          const SizedBox(width: 12),
+          _buildFaceSelector(),
+        ],
+      );
+    }
+
+  Widget _buildGrid() {
     return SizedBox(
       height: 200,
       width: 200,
-      child: GridView.count( 
-      crossAxisCount: 3,
-      children: List.generate(9, (generator){
-        return ElevatedButton(
-          onPressed: () => {},
-          style: ButtonStyle(
-            fixedSize: WidgetStateProperty.all(const Size(64, 64)),
-            shape: WidgetStateProperty.all(
-              RoundedRectangleBorder(
-                borderRadius: BorderRadius.zero,
-                side: BorderSide(color: Colors.black)
+      child: GridView.count(
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisCount: 3,
+        children: [
+          for (int row = 0; row < 3; row++)
+            for (int col = 0; col < 3; col++)
+              GestureDetector(
+                onTap: () => _paintCell(row, col),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _allFaces[_currentFace][row][col],
+                    shape: BoxShape.rectangle,
+                    borderRadius: BorderRadius.circular(2),
+                    border: Border.all(color: Colors.black),
+                  ),
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFaceSelector() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(6, (index) {
+        final isActive = _currentFace == index;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: SizedBox(
+            width: 40,
+            height: 30,
+            child: ElevatedButton(
+              onPressed: () => _switchFace(index),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isActive ? Colors.teal : Colors.grey[300],
+                foregroundColor: isActive ? Colors.white : Colors.black87,
+                padding: EdgeInsets.zero,
+                elevation: isActive ? 4 : 1,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              child: Text(
+                _faceLabels[index],
+                style: TextStyle(
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                  fontSize: 13,
+                ),
               ),
             ),
-            
           ),
-          child: const Text(""),
         );
       }),
-      /* [
-        ElevatedButton(
-          onPressed: ()=>{}, 
-          child: const Text(""),
-        ),
-        ElevatedButton(
-          onPressed: ()=>{}, 
-          child: const Text(""),
-        ),
-        ElevatedButton(
-          onPressed: ()=>{}, 
-          child: const Text(""),
-        ),
-        ElevatedButton(
-          onPressed: ()=>{}, 
-          child: const Text(""),
-        )
-      ] */
-    ));
+    );
   }
 }
