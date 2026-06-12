@@ -22,7 +22,24 @@ class _PageManualFillState extends State<PageManualFill> {
   Color _selectedColor = defaultColorValue[0];
   bool _isComplete = false;
 
+  final List<List<List<Color?>>> _allFaces = 
+    List.generate(6, (_) => 
+      List.generate(3, (_) =>
+        List.generate(3, (_) => null,
+      )
+    )
+  );
+
   List<int> numberOfCellsRemaining = List.filled(6, 9);
+
+  final ValueNotifier<List<int>> _cellsRemainingNotifier = 
+    ValueNotifier(List.filled(6, 9));
+  
+  @override
+  void dispose() {
+    _cellsRemainingNotifier.dispose();
+    super.dispose();
+  }
   
   @override
   Widget build(BuildContext context) {
@@ -47,6 +64,8 @@ class _PageManualFillState extends State<PageManualFill> {
           ),
           RubiksFace(
             selectedColor: _selectedColor, 
+            allFaces: _allFaces,
+            cellsRemainingNotifier: _cellsRemainingNotifier,
             isRubikComplete: (value){
               setState(() {
                 _isComplete = value;
@@ -54,7 +73,7 @@ class _PageManualFillState extends State<PageManualFill> {
             },
           ),
           ColorPickerRow(
-            numberOfCellsRemaining: [...numberOfCellsRemaining],
+            cellsRemainingNotifier: _cellsRemainingNotifier,
             onColorSelected: (color)=>setState(() {
               _selectedColor = color;
             })
@@ -67,7 +86,7 @@ class _PageManualFillState extends State<PageManualFill> {
             ElevatedButton.icon(
               onPressed: () {
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (builder)=>PageSolution())
+                  MaterialPageRoute(builder: (builder)=>PageSolution(cubeFaces: _allFaces,))
                 );
               },
               icon: const Icon(Icons.check_circle_outline),
@@ -86,12 +105,12 @@ class _PageManualFillState extends State<PageManualFill> {
 
 class ColorPickerRow extends StatefulWidget {
   final ValueChanged<Color> onColorSelected;
-  final List<int> numberOfCellsRemaining;
+  final ValueNotifier<List<int>> cellsRemainingNotifier;
 
   const ColorPickerRow({
     super.key, 
     required this.onColorSelected,
-    required this.numberOfCellsRemaining,
+    required this.cellsRemainingNotifier,
   });
 
   @override
@@ -105,37 +124,40 @@ class _ColorPickerRowState extends State<ColorPickerRow> {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 90,
-      child: ListView.separated(
-        padding: EdgeInsets.all(16),
-        scrollDirection: Axis.horizontal,
-        itemCount: defaultColorValue.length + 1,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          if(index == 0){
-            return SizedBox(
-              width: 48,
-              child: IconButton(
-                onPressed: ()=>{}, 
-                icon: Icon(Icons.edit),
-            ));
-          }
-          return Align(
-            alignment: Alignment.center,
-            child: ColorPickerTile(
-              colorValue: defaultColorValue[index - 1],
-              width: 48, 
-              height: 48,
-              selected: selectedIndex == index,
-              onTap: () => setState(() {
-                selectedIndex = index;
-                widget.onColorSelected(defaultColorValue[index - 1]);
-              }),
-              numberOfCellsRemaining: widget.numberOfCellsRemaining[index - 1],
+      child: ValueListenableBuilder(
+        valueListenable: widget.cellsRemainingNotifier, 
+        builder: (context, cellsRemaining, _){
+         return ListView.separated(
+          padding: EdgeInsets.all(16),
+          scrollDirection: Axis.horizontal,
+          itemCount: defaultColorValue.length + 1,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (context, index) {
+            if(index == 0){
+              return SizedBox(
+                width: 48,
+                child: IconButton(
+                  onPressed: ()=>{}, 
+                  icon: Icon(Icons.edit),
+              ));
+            }
+            return Align(
+              alignment: Alignment.center,
+              child: ColorPickerTile(
+                colorValue: defaultColorValue[index - 1],
+                width: 48, 
+                height: 48,
+                selected: selectedIndex == index,
+                onTap: () => setState(() {
+                  selectedIndex = index;
+                  widget.onColorSelected(defaultColorValue[index - 1]);
+                }),
+                numberOfCellsRemaining: cellsRemaining[index - 1],
               )
             );
-        },
-      ),
-
+          },
+         );
+      })
     );
   }
 }
@@ -193,13 +215,17 @@ class ColorPickerTile extends StatelessWidget {
 
 class RubiksFace extends StatefulWidget{
   final Color selectedColor;
+  final List<List<List<Color?>>> allFaces;
+  final ValueNotifier<List<int>> cellsRemainingNotifier;
   
   final Function(bool value) isRubikComplete;
 
   const RubiksFace({
     super.key, 
     required this.selectedColor,
-    required this.isRubikComplete
+    required this.isRubikComplete,
+    required this.allFaces,
+    required this.cellsRemainingNotifier,
   });
 
   @override
@@ -208,30 +234,9 @@ class RubiksFace extends StatefulWidget{
 
 class _RubiksFaceState extends State<RubiksFace>{
 
-  static const _faceLabels = ['F', 'R', 'U', 'B', 'L', 'D'];
-
-  final List<List<List<Color?>>> _allFaces = 
-    List.generate(6, (_) => 
-      List.generate(3, (_) =>
-        List.generate(3, (_) => null,
-      )
-    )
-  );
-
   int _currentFace = 0;
 
-  void _paintCell(int row, int col) {
-    setState(() {
-      _allFaces[_currentFace][row][col] = widget.selectedColor;
-    });
-    widget.isRubikComplete(_isComplete);
-  }
-
-  void _switchFace(int faceIndex) {
-    setState(() => _currentFace = faceIndex);
-  }
-
-  bool get _isComplete => _allFaces.every(
+  bool get _isComplete => widget.allFaces.every(
     (face) => face.every(
       (row) => row.every(
         (cell) => cell != null, 
@@ -246,14 +251,85 @@ class _RubiksFaceState extends State<RubiksFace>{
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _buildGrid(),
+          RubiksGridView(
+            allFaces: widget.allFaces,
+            selectedFace: _currentFace,
+            selectedColor: widget.selectedColor,
+            cellsRemainingNotifier: widget.cellsRemainingNotifier,
+            isRubikComplete: widget.isRubikComplete,
+          ),
           const SizedBox(width: 12),
-          _buildFaceSelector(),
+          RubikFaceSelector(
+            switchFace: (value) {
+              setState(() {
+                _currentFace = value;
+              });
+            },
+          ),
         ],
       );
     }
 
-  Widget _buildGrid() {
+}
+
+class RubiksGridView extends StatefulWidget{
+
+  final List<List<List<Color?>>> allFaces;
+  final int selectedFace;
+  final Color selectedColor;
+  final Function(bool value) isRubikComplete;
+  final ValueNotifier<List<int>> cellsRemainingNotifier;
+
+  const RubiksGridView({
+    super.key, 
+    required this.allFaces,
+    required this.selectedFace,
+    required this.selectedColor,
+    required this.cellsRemainingNotifier,
+    required this.isRubikComplete,
+  });
+
+  @override
+  State<StatefulWidget> createState() => StateRubikGridView();
+}
+
+class StateRubikGridView extends State<RubiksGridView>{
+
+  void _paintCell(int row, int col) {
+    final oldColor = widget.allFaces[widget.selectedFace][row][col];
+    final newColor = widget.selectedColor;
+
+    if(newColor == oldColor) return;
+
+    final newIndex = defaultColorValue.indexOf(newColor);
+    final remaining = widget.cellsRemainingNotifier.value;
+    if (newIndex != -1 && remaining[newIndex] <= 0) return; // ← add this
+
+    setState(() {
+      widget.allFaces[widget.selectedFace][row][col] = newColor;
+    });
+
+    final oldIndex = oldColor != null ? defaultColorValue.indexOf(oldColor) : -1;
+
+    final updated = List<int>.from(widget.cellsRemainingNotifier.value);
+    if (newIndex != -1) updated[newIndex]--; 
+    if (oldIndex != -1) updated[oldIndex]++; 
+    widget.cellsRemainingNotifier.value = updated;
+
+    widget.isRubikComplete(_isComplete);
+  }
+
+  bool get _isComplete => widget.allFaces.every(
+    (face) => face.every(
+      (row) => row.every(
+        (cell) => cell != null, 
+      )
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    // TODO: implement build
     return SizedBox(
       height: 200,
       width: 200,
@@ -267,7 +343,7 @@ class _RubiksFaceState extends State<RubiksFace>{
                 onTap: () => _paintCell(row, col),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: _allFaces[_currentFace][row][col],
+                    color: widget.allFaces[widget.selectedFace][row][col],
                     shape: BoxShape.rectangle,
                     borderRadius: BorderRadius.circular(2),
                     border: Border.all(color: Colors.black),
@@ -278,8 +354,25 @@ class _RubiksFaceState extends State<RubiksFace>{
       ),
     );
   }
+}
 
-  Widget _buildFaceSelector() {
+class RubikFaceSelector extends StatefulWidget{
+
+  final Function(int value) switchFace;
+  const RubikFaceSelector({super.key, required this.switchFace});
+
+  @override
+  State<StatefulWidget> createState() => StateRubikFaceSelector();
+}
+
+class StateRubikFaceSelector extends State<RubikFaceSelector> {
+  
+  static const _faceLabels = ['F', 'R', 'U', 'B', 'L', 'D'];
+  int _currentFace = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    // TODO: implement build
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(6, (index) {
@@ -290,7 +383,10 @@ class _RubiksFaceState extends State<RubiksFace>{
             width: 40,
             height: 30,
             child: ElevatedButton(
-              onPressed: () => _switchFace(index),
+              onPressed: () => {
+                widget.switchFace(index),
+                _currentFace = index,
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: isActive ? Colors.teal : Colors.grey[300],
                 foregroundColor: isActive ? Colors.white : Colors.black87,
