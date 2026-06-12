@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:solve_my_cube/globals.dart';
+import 'package:solve_my_cube/pages/page_manual_fill.dart';
+import './page_camera.dart';
 
 class PageCube extends StatelessWidget {
 
@@ -28,7 +31,13 @@ class PageCube extends StatelessWidget {
               ), */
             ),
             ElevatedButton.icon(
-              onPressed: ()=>{}, 
+              onPressed: ()=>{
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => PageCamera(camera: globalCameras.first),
+                  ),
+                )
+              }, 
               icon: Icon(Icons.camera_alt),
               label: Text("Camera")
             ),
@@ -39,7 +48,11 @@ class PageCube extends StatelessWidget {
               endIndent: 64,
             ),
             ElevatedButton.icon(
-              onPressed: ()=>{}, 
+              onPressed: ()=>{
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) => PageManualFill())
+                )
+              }, 
               icon: Icon(Icons.input),
               label: Text("Manul input")
             )
