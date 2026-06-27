@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import '../algorithms/cfop/cfop.dart';
 
 class PageSolution extends StatelessWidget{
 
-  final List<List<List<Color?>>> cubeFaces;
+  final List<List<List<Color>>> cubeFaces;
 
   const PageSolution({
     super.key,
@@ -12,32 +13,15 @@ class PageSolution extends StatelessWidget{
   @override
   Widget build(BuildContext context) {
     // TODO: implement build
+    // Calculate it once per build cycle
+    final String solution = solveCfop(cubeFaces);
+
     return Scaffold(
-      body: Center(
-        child: ListView(
-          padding: EdgeInsets.all(16),
+      body: Center( // Added Center to make Column alignment work properly
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            for (int faceIdx = 0; faceIdx < cubeFaces.length; faceIdx++) ...[
-              Text(
-                'Face $faceIdx',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-              
-              for (int rowIdx = 0; rowIdx < cubeFaces[faceIdx].length; rowIdx++) ...[
-                Text('  Row $rowIdx:'),
-                
-                for (int cellIdx = 0; cellIdx < cubeFaces[faceIdx][rowIdx].length; cellIdx++) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(left: 24.0),
-                    child: Text(
-                      'Cell $cellIdx: Color description -> ${cubeFaces[faceIdx][rowIdx][cellIdx].toString()}',
-                      style: const TextStyle(color: Colors.blueGrey),
-                    ),
-                  ),
-                ],
-              ],
-              const Divider(),
-            ],
+            Text(solution.isEmpty ? "Already Solved!" : solution),
           ],
         ),
       ),

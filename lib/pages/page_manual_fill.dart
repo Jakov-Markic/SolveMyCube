@@ -85,8 +85,14 @@ class _PageManualFillState extends State<PageManualFill> {
           if(_isComplete)...[
             ElevatedButton.icon(
               onPressed: () {
+                final List<List<List<Color>>> tempCubeFaces = _allFaces.map(
+                  (face) => face.map(
+                    (row) => row.cast<Color>().toList()
+                  ).toList()
+                ).toList();
+
                 Navigator.of(context).push(
-                  MaterialPageRoute(builder: (builder)=>PageSolution(cubeFaces: _allFaces,))
+                  MaterialPageRoute(builder: (builder)=>PageSolution(cubeFaces: tempCubeFaces,))
                 );
               },
               icon: const Icon(Icons.check_circle_outline),
