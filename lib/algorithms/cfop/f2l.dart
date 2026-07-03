@@ -15,9 +15,9 @@ String solveF2L(RubiksCube cube) {
 
     // Kick target corner to top layer if stuck in a bottom slot
     String extract = "";
-    if (matchCorner(cube, Face.D, 2, 2, Face.R, 2, 2, Face.B, 2, 0, cD, cF, cR)) extract = "R' U R";
-    else if (matchCorner(cube, Face.D, 2, 0, Face.B, 2, 2, Face.L, 2, 0, cD, cF, cR)) extract = "L' U L";
-    else if (matchCorner(cube, Face.D, 0, 0, Face.L, 2, 2, Face.F, 2, 0, cD, cF, cR)) extract = "L U L'";
+    if (matchCorner(cube, Face.D, 2, 2, Face.R, 2, 2, Face.B, 2, 0, cD, cF, cR)) {extract = "R' U R";}
+    else if (matchCorner(cube, Face.D, 2, 0, Face.B, 2, 2, Face.L, 2, 0, cD, cF, cR)) {extract = "L' U L";}
+    else if (matchCorner(cube, Face.D, 0, 0, Face.L, 2, 2, Face.F, 2, 0, cD, cF, cR)) {extract = "L U L'";}
     else if (matchCorner(cube, Face.D, 0, 2, Face.F, 2, 2, Face.R, 2, 0, cD, cF, cR)) {
       // It's in our active slot, check if it's already solved
       if (cube.grid[Face.D.index][0][2] != cD || cube.grid[Face.F.index][2][2] != cF) {
@@ -32,9 +32,9 @@ String solveF2L(RubiksCube cube) {
 
     // Align the corner on the U layer directly above our target slot (UFR position)
     String align = "";
-    if (matchCorner(cube, Face.U, 0, 2, Face.R, 0, 2, Face.B, 0, 0, cD, cF, cR)) align = "U";
-    else if (matchCorner(cube, Face.U, 0, 0, Face.B, 0, 2, Face.L, 0, 0, cD, cF, cR)) align = "U2";
-    else if (matchCorner(cube, Face.U, 2, 0, Face.L, 0, 2, Face.F, 0, 0, cD, cF, cR)) align = "U'";
+    if (matchCorner(cube, Face.U, 0, 2, Face.R, 0, 2, Face.B, 0, 0, cD, cF, cR)) {align = "U";}
+    else if (matchCorner(cube, Face.U, 0, 0, Face.B, 0, 2, Face.L, 0, 0, cD, cF, cR)) {align = "U2";}
+    else if (matchCorner(cube, Face.U, 2, 0, Face.L, 0, 2, Face.F, 0, 0, cD, cF, cR)) {align = "U'";}
 
     if (align.isNotEmpty) {
       cube.executeSequence(align);
@@ -42,13 +42,26 @@ String solveF2L(RubiksCube cube) {
     }
 
     // Run the standard "Sexy Move" loop until the corner drops perfectly into the slot
+    // Run the standard "Sexy Move" loop until the corner drops perfectly into the slot
+    int attempts = 0;
     while (cube.grid[Face.D.index][0][2] != cD || cube.grid[Face.F.index][2][2] != cF) {
       cube.executeSequence("R U R' U'");
       steps.write("R U R' U' ");
+      attempts++;
+      if (attempts >= 6) {
+        // The sexy move has order 6 — if we're still not solved after 6 reps,
+        // the piece sitting here isn't actually the target corner.
+        // That means extract/align above failed to detect/position it correctly.
+        throw StateError(
+          'F2L corner insert failed: target cD=$cD cF=$cF not resolved after 6 attempts. '
+          'DFR slot has D=${cube.grid[Face.D.index][0][2]}, F=${cube.grid[Face.F.index][2][2]}. '
+          'Likely missing case in extract/align logic for iteration $i.'
+        );
+      }
     }
 
-    cube.executeSequence("Y");
-    steps.write("Y ");
+    cube.rotateCubeY();
+    //steps.write("Y ");
   }
 
   // Step B: Solve the 4 middle layer edges
@@ -58,9 +71,9 @@ String solveF2L(RubiksCube cube) {
 
     // Kick edge to top layer if stuck incorrectly in a middle slot
     String extract = "";
-    if (matchEdge(cube, Face.R, 1, 2, Face.B, 1, 0, cF, cR)) extract = "R' U R";
-    else if (matchEdge(cube, Face.B, 1, 2, Face.L, 1, 0, cF, cR)) extract = "B' U B";
-    else if (matchEdge(cube, Face.L, 1, 2, Face.F, 1, 0, cF, cR)) extract = "L' U L";
+    if (matchEdge(cube, Face.R, 1, 2, Face.B, 1, 0, cF, cR)) {extract = "R' U R";}
+    else if (matchEdge(cube, Face.B, 1, 2, Face.L, 1, 0, cF, cR)) {extract = "B' U B";}
+    else if (matchEdge(cube, Face.L, 1, 2, Face.F, 1, 0, cF, cR)) {extract = "L' U L";}
     else if (matchEdge(cube, Face.F, 1, 2, Face.R, 1, 0, cF, cR)) {
       if (cube.grid[Face.F.index][1][2] != cF) {
         extract = "R U R' U' F' U F"; // Flipped in its own slot
@@ -97,8 +110,8 @@ String solveF2L(RubiksCube cube) {
       steps.write("$insert ");
     }
 
-    cube.executeSequence("Y");
-    steps.write("Y ");
+    cube.rotateCubeY();
+    //steps.write("Y ");
   }
 
   return steps.toString().trim();

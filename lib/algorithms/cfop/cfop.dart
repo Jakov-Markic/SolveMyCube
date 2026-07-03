@@ -7,12 +7,12 @@ import 'pll.dart';
 enum Face { F, R, U, B, L, D }
 
 enum Move {
-  F, FPrime,
-  R, RPrime,
-  U, UPrime,
-  B, BPrime,
-  L, LPrime,
-  D, DPrime
+  F, FPrime, F2, f,
+  R, RPrime, R2, r,
+  U, UPrime, U2, u,
+  B, BPrime, B2, b,
+  L, LPrime, L2, l,
+  D, DPrime, D2, d
 }
 
 class RubiksCube {
@@ -25,29 +25,46 @@ class RubiksCube {
 
   /// Parses standard algorithm notation strings and executes them sequentially.
   void executeSequence(String sequence) {
-    if (sequence.trim().isEmpty) return;
-    List<String> tokens = sequence.split(RegExp(r'\s+'));
-    for (String token in tokens) {
-      Move? move = _parseToken(token);
-      if (move != null) applyMove(move);
-    }
+  if (sequence.trim().isEmpty) return;
+  List<String> tokens = sequence.split(RegExp(r'\s+'));
+  for (String token in tokens) {
+    Move? move = _parseToken(token);
+    if (move != null) applyMove(move);
+  }
   }
 
   Move? _parseToken(String token) {
     switch (token) {
-      case 'F':  return Move.F;
-      case "F'": return Move.FPrime;
-      case 'R':  return Move.R;
-      case "R'": return Move.RPrime;
-      case 'U':  return Move.U;
-      case "U'": return Move.UPrime;
-      case 'B':  return Move.B;
-      case "B'": return Move.BPrime;
-      case 'L':  return Move.L;
-      case "L'": return Move.LPrime;
-      case 'D':  return Move.D;
-      case "D'": return Move.DPrime;
-      default:   return null;
+      case 'F':   return Move.F;
+      case "F'":  return Move.FPrime;
+      case 'F2':  return Move.F2;
+      case 'f':   return Move.f;
+
+      case 'R':   return Move.R;
+      case "R'":  return Move.RPrime;
+      case 'R2':  return Move.R2;
+      case 'r':   return Move.r;
+
+      case 'U':   return Move.U;
+      case "U'":  return Move.UPrime;
+      case 'U2':  return Move.U2;
+      case 'u':   return Move.u;
+
+      case 'B':   return Move.B;
+      case "B'":  return Move.BPrime;
+      case 'B2':  return Move.B2;
+      case 'b':   return Move.b;
+
+      case 'L':   return Move.L;
+      case "L'":  return Move.LPrime;
+      case 'L2':  return Move.L2;
+      case 'l':   return Move.l;
+
+      case 'D':   return Move.D;
+      case "D'":  return Move.DPrime;
+      case 'D2':  return Move.D2;
+      case 'd':   return Move.d;
+      default:    return null;
     }
   }
 
@@ -63,8 +80,16 @@ class RubiksCube {
         _rotateFaceCounterClockwise(Face.U);
         _shiftHorizontalRing(clockwise: false);
         break;
+      case Move.U2:
+        applyMove(Move.U);
+        applyMove(Move.U);
+        break;
+      case Move.u:
+        applyMove(Move.D);
+        _rotateCubeYPrime();
+        break;
 
-      // Down (D) Move: Rotate cube upside down (X2), do a U move, rotate back
+      // Down (D) Move
       case Move.D:
         _rotateCubeX(); _rotateCubeX();
         applyMove(Move.U);
@@ -75,8 +100,16 @@ class RubiksCube {
         applyMove(Move.UPrime);
         _rotateCubeX(); _rotateCubeX();
         break;
-
-      // Right (R) Move: Tilt cube left (Z'), do a U move, tilt back (Z)
+      case Move.D2:
+        applyMove(Move.D);
+        applyMove(Move.D);
+        break;
+      case Move.d:
+        applyMove(Move.U);
+        rotateCubeY();
+        break;
+      
+      // Right (R) Move
       case Move.R:
         _rotateCubeZPrime();
         applyMove(Move.U);
@@ -87,8 +120,17 @@ class RubiksCube {
         applyMove(Move.UPrime);
         _rotateCubeZ();
         break;
+      case Move.R2:
+        applyMove(Move.R);
+        applyMove(Move.R);
+        break;
+      case Move.r:
+        applyMove(Move.L);
+        _rotateCubeXPrime();
+        break;
+        
 
-      // Left (L) Move: Tilt cube right (Z), do a U move, tilt back (Z')
+      // Left (L) Move
       case Move.L:
         _rotateCubeZ();
         applyMove(Move.U);
@@ -99,8 +141,17 @@ class RubiksCube {
         applyMove(Move.UPrime);
         _rotateCubeZPrime();
         break;
+      case Move.L2:
+        applyMove(Move.L);
+        applyMove(Move.L);
+        break;
+      case Move.l:
+        applyMove(Move.R);
+        _rotateCubeX();
+        break;
+        
 
-      // Front (F) Move: Roll cube up (X), do a U move, roll back (X')
+      // Front (F) Move
       case Move.F:
         _rotateCubeX();
         applyMove(Move.U);
@@ -111,8 +162,17 @@ class RubiksCube {
         applyMove(Move.UPrime);
         _rotateCubeXPrime();
         break;
+      case Move.F2:
+        applyMove(Move.F);
+        applyMove(Move.F);
+        break;
+      case Move.f:
+        applyMove(Move.B);
+        _rotateCubeZPrime();
+        break;
+        
 
-      // Back (B) Move: Roll cube down (X'), do a U move, roll back (X)
+      // Back (B) Move
       case Move.B:
         _rotateCubeXPrime();
         applyMove(Move.U);
@@ -123,11 +183,17 @@ class RubiksCube {
         applyMove(Move.UPrime);
         _rotateCubeX();
         break;
+      case Move.B2:
+        applyMove(Move.B);
+        applyMove(Move.B);
+        break;
+      case Move.b:
+        applyMove(Move.F);
+        _rotateCubeZ();
+        break;
+        
     }
   }
-
-  // --- CORE LAYER MANIPULATION ---
-
   void _rotateFaceClockwise(Face face) {
     int f = face.index;
     List<List<Color>> temp = List.generate(3, (r) => List.generate(3, (c) => grid[f][r][c]));
@@ -158,15 +224,15 @@ class RubiksCube {
     List<Color> tempF = [grid[f][0][0], grid[f][0][1], grid[f][0][2]];
 
     if (clockwise) {
-      for (int i = 0; i < 3; i++) grid[f][0][i] = grid[r][0][i];
-      for (int i = 0; i < 3; i++) grid[r][0][i] = grid[b][0][i];
-      for (int i = 0; i < 3; i++) grid[b][0][i] = grid[l][0][i];
-      for (int i = 0; i < 3; i++) grid[l][0][i] = tempF[i];
+      for (int i = 0; i < 3; i++) {grid[f][0][i] = grid[r][0][i];}
+      for (int i = 0; i < 3; i++) {grid[r][0][i] = grid[b][0][i];}
+      for (int i = 0; i < 3; i++) {grid[b][0][i] = grid[l][0][i];}
+      for (int i = 0; i < 3; i++) {grid[l][0][i] = tempF[i];}
     } else {
-      for (int i = 0; i < 3; i++) grid[f][0][i] = grid[l][0][i];
-      for (int i = 0; i < 3; i++) grid[l][0][i] = grid[b][0][i];
-      for (int i = 0; i < 3; i++) grid[b][0][i] = grid[r][0][i];
-      for (int i = 0; i < 3; i++) grid[r][0][i] = tempF[i];
+      for (int i = 0; i < 3; i++) {grid[f][0][i] = grid[l][0][i];}
+      for (int i = 0; i < 3; i++) {grid[l][0][i] = grid[b][0][i];}
+      for (int i = 0; i < 3; i++) {grid[b][0][i] = grid[r][0][i];}
+      for (int i = 0; i < 3; i++) {grid[r][0][i] = tempF[i];}
     }
   }
 
@@ -225,19 +291,30 @@ class RubiksCube {
   }
 
   /// Rotates the entire cube horizontally around the Y-axis (Looking from the top)
-  void _rotateCubeY() {
+  void rotateCubeY() {
     _rotateFaceClockwise(Face.U);
     _rotateFaceCounterClockwise(Face.D);
     var oldF = _getClonedFace(Face.F);
     var oldR = _getClonedFace(Face.R);
     var oldB = _getClonedFace(Face.B);
     var oldL = _getClonedFace(Face.L);
-    
-    grid[Face.L.index] = oldF;
-    grid[Face.B.index] = oldR;
+
+    grid[Face.F.index] = oldR;
     grid[Face.R.index] = oldB;
-    grid[Face.F.index] = oldL;
+    grid[Face.B.index] = oldL;
+    grid[Face.L.index] = oldF;
   }
+  void _rotateCubeYPrime() {
+  _rotateFaceCounterClockwise(Face.U);
+  _rotateFaceClockwise(Face.D);
+
+  var tempF = grid[Face.F.index];
+  
+  grid[Face.F.index] = grid[Face.R.index];
+  grid[Face.R.index] = grid[Face.B.index];
+  grid[Face.B.index] = grid[Face.L.index];
+  grid[Face.L.index] = tempF;
+}
 
   /// Rotates the entire cube along the Z-axis (Tilts right, Up goes Right)
   void _rotateCubeZ() {
@@ -360,7 +437,7 @@ String solveCfop(List<List<List<Color>>> cubeFaces) {
   if (!cube.checkPLL()) {
     String pllSteps = solvePLL(cube);
     cube.executeSequence(pllSteps);
-    completeSolution.write("$pllSteps");
+    completeSolution.write(pllSteps);
   }
 
   return completeSolution.toString().trim();
