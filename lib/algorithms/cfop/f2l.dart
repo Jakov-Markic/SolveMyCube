@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:solve_my_cube/algorithms/cfop/bottom_cross.dart';
 import 'cfop.dart';
 
 
@@ -6,6 +7,10 @@ import 'cfop.dart';
 
 String solveF2L(RubiksCube cube) {
   StringBuffer steps = StringBuffer();
+
+  if(!cube.checkBottomCross()){
+    steps.write(solveBottomCross(cube));
+  }
 
   // Step A: Solve the 4 bottom corners first
   for (int i = 0; i < 4; i++) {
@@ -61,7 +66,7 @@ String solveF2L(RubiksCube cube) {
     }
 
     cube.rotateCubeY();
-    //steps.write("Y ");
+    steps.write("y ");
   }
 
   // Step B: Solve the 4 middle layer edges
@@ -71,7 +76,7 @@ String solveF2L(RubiksCube cube) {
 
     // Kick edge to top layer if stuck incorrectly in a middle slot
     String extract = "";
-    if (matchEdge(cube, Face.R, 1, 2, Face.B, 1, 0, cF, cR)) {extract = "R' U R";}
+    if (matchEdge(cube, Face.R, 1, 2, Face.B, 1, 0, cF, cR)) {extract = "R' U' R U B U' B'";}
     else if (matchEdge(cube, Face.B, 1, 2, Face.L, 1, 0, cF, cR)) {extract = "B' U B";}
     else if (matchEdge(cube, Face.L, 1, 2, Face.F, 1, 0, cF, cR)) {extract = "L' U L";}
     else if (matchEdge(cube, Face.F, 1, 2, Face.R, 1, 0, cF, cR)) {
@@ -111,8 +116,9 @@ String solveF2L(RubiksCube cube) {
     }
 
     cube.rotateCubeY();
-    //steps.write("Y ");
+    steps.write("y ");
   }
 
   return steps.toString().trim();
 }
+

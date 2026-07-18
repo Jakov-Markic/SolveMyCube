@@ -1,95 +1,3 @@
-/* import 'package:flutter/material.dart';
-
-import 'cfop.dart';
-
-
-String solveOLL(RubiksCube cube) {
-  StringBuffer steps = StringBuffer();
-  Color targetU = cube.getCenterColor(Face.U);
-
-  // --- STEP 1: Orient Edges (Get the Yellow Cross) ---
-  int edgeCount = 0;
-  if (cube.grid[Face.U.index][0][1] == targetU) edgeCount++; // Back edge
-  if (cube.grid[Face.U.index][1][0] == targetU) edgeCount++; // Left edge
-  if (cube.grid[Face.U.index][1][2] == targetU) edgeCount++; // Right edge
-  if (cube.grid[Face.U.index][2][1] == targetU) edgeCount++; // Front edge
-
-  if (edgeCount == 0) {
-    // Dot Case: Run Line algorithm, then L-shape algorithm
-    cube.executeSequence("F R U R' U' F'");
-    steps.write("F R U R' U' F' ");
-    // Re-evaluate to handle the resulting L-shape
-    edgeCount = 2; 
-  }
-
-  if (edgeCount == 2) {
-    // Could be a Line or an L-shape. Let's align it.
-    bool isLine = (cube.grid[Face.U.index][1][0] == targetU && cube.grid[Face.U.index][1][2] == targetU) ||
-                  (cube.grid[Face.U.index][0][1] == targetU && cube.grid[Face.U.index][2][1] == targetU);
-
-    if (isLine) {
-      // Make sure the line is horizontal (Left-Right)
-      if (cube.grid[Face.U.index][0][1] == targetU) {
-        cube.executeSequence("U");
-        steps.write("U ");
-      }
-      cube.executeSequence("F R U R' U' F'");
-      steps.write("F R U R' U' F' ");
-    } else {
-      // It's an L-shape. Rotate U until the L points Back and Left (0,1 and 1,0 are targetU)
-      int uAttempts = 0;
-      while (cube.grid[Face.U.index][0][1] != targetU || cube.grid[Face.U.index][1][0] != targetU) {
-        cube.executeSequence("U");
-        steps.write("U ");
-        uAttempts++;
-        if (uAttempts >= 4) {
-          throw StateError('OLL L-shape alignment failed after 4 U turns — condition unreachable.');
-        }
-      }
-      cube.executeSequence("F U R U' R' F'");
-      steps.write("F U R U' R' F' ");
-    }
-  }
-
-  // --- STEP 2: Orient Corners (Sune Loop) ---
-  // Keep looping Sune until all 9 stickers on the U face match targetU
-  int safetyTimeout = 0;
-  while (!cube.checkOLL() && safetyTimeout < 8) {
-    safetyTimeout++;
-    int orientedCorners = 0;
-    if (cube.grid[Face.U.index][0][0] == targetU) orientedCorners++;
-    if (cube.grid[Face.U.index][0][2] == targetU) orientedCorners++;
-    if (cube.grid[Face.U.index][2][0] == targetU) orientedCorners++;
-    if (cube.grid[Face.U.index][2][2] == targetU) orientedCorners++;
-
-    if (orientedCorners == 1) {
-      // Sune Case: Rotate U until the single oriented corner is at the Front-Left (2,0)
-      while (cube.grid[Face.U.index][2][0] != targetU) {
-        cube.executeSequence("U");
-        steps.write("U ");
-      }
-    } else if (orientedCorners == 2) {
-      // Car/Chameleon structures: Rotate U until a yellow sticker faces Left at Front-Left-Up
-      while (cube.grid[Face.L.index][0][2] != targetU) {
-        cube.executeSequence("U");
-        steps.write("U ");
-      }
-    } else if (orientedCorners == 0) {
-      // Bowtie/Cross structures: Rotate U until a yellow sticker faces Front at Front-Left-Up
-      while (cube.grid[Face.F.index][0][0] != targetU) {
-        cube.executeSequence("U");
-        steps.write("U ");
-      }
-    }
-
-    cube.executeSequence("R U R' U R U2 R'");
-    steps.write("R U R' U R U2 R' ");
-  }
-
-  return steps.toString().trim();
-}
- */
-
 import 'package:flutter/material.dart';
 import 'cfop.dart';
 
@@ -161,31 +69,33 @@ String solveOLL(RubiksCube cube) {
   // A full OLL case might be rotated. We check all 4 U-turn variations.
   for (int rotation = 0; rotation < 4; rotation++) {
     String currentSignature = _getOLLSignature(cube, targetU);
-
+// 🔍 Add this to see what your code is actually seeing:
+  print("Rotation $rotation Signature: $currentSignature (Ones: ${currentSignature.split('1').length - 1})");
     if (standardOLLAlgorithms.containsKey(currentSignature)) {
       String algorithm = standardOLLAlgorithms[currentSignature]!;
-      cube.executeSequence(algorithm);
+      //cube.executeSequence(algorithm);
       steps.write(algorithm);
       return steps.toString().trim();
     }
 
     // If no case matches the current orientation, turn the U layer and try again
-    cube.executeSequence("U");
+    //cube.executeSequence("U");
     steps.write("U ");
   }
 
   // If we reach here, either the state is invalid or a signature calculation is misaligned.
-  throw StateError("Cube is in an invalid OLL state or the case signature isn't in the 57-OLL database.");
+  throw StateError("Cube is in an invalid OOL state or the case signature isn't in the 57-OLL database.");
 }
 
 /// Generates a strict 21-character binary string signature of the top layer state.
 String _getOLLSignature(RubiksCube cube, Color targetU) {
-  StringBuffer sig = StringBuffer();
+  /* StringBuffer sig = StringBuffer();
 
   // 1. Read the 9 stickers on the Up face (rows 0-2, cols 0-2)
   for (int r = 0; r < 3; r++) {
     for (int c = 0; c < 3; c++) {
       sig.write(cube.grid[Face.U.index][r][c] == targetU ? "1" : "0");
+      print("${targetU} == ${cube.grid[Face.U.index][r][c]}");
     }
   }
 
@@ -199,5 +109,50 @@ String _getOLLSignature(RubiksCube cube, Color targetU) {
   // Left face top row
   for (int c = 0; c < 3; c++) {sig.write(cube.grid[Face.L.index][0][c] == targetU ? "1" : "0");}
 
-  return sig.toString();
+  return sig.toString(); */
+  StringBuffer sig = StringBuffer();
+
+  // 1. Helper function to check colors by their exact RGB values
+  String checkColor(Color? gridColor, String label) {
+    if (gridColor == null) return "0";
+    
+    // Check if the RGB channels match perfectly
+    bool isMatch = gridColor.red == targetU.red && 
+                   gridColor.green == targetU.green && 
+                   gridColor.blue == targetU.blue;
+                   
+    return isMatch ? "1" : "0";
+  }
+
+  // 2. Read the 9 stickers on the Up face (rows 0-2, cols 0-2)
+  for (int r = 0; r < 3; r++) {
+    for (int c = 0; c < 3; c++) {
+      sig.write(checkColor(cube.grid[Face.U.index][r][c], "U[$r][$c]"));
+    }
+  }
+
+  // 3. Read adjacent outer top stickers in a uniform clockwise order (0 to 2)
+  // Front face top row
+  for (int c = 0; c < 3; c++) {
+    sig.write(checkColor(cube.grid[Face.F.index][0][c], "F[0][$c]"));
+  }
+  // Right face top row
+  for (int c = 0; c < 3; c++) {
+    sig.write(checkColor(cube.grid[Face.R.index][0][c], "R[0][$c]"));
+  }
+  // Back face top row (Changed from 2->0 to 0->2 to keep string mutations uniform!)
+  for (int c = 0; c < 3; c++) {
+    sig.write(checkColor(cube.grid[Face.B.index][0][c], "B[0][$c]"));
+  }
+  // Left face top row
+  for (int c = 0; c < 3; c++) {
+    sig.write(checkColor(cube.grid[Face.L.index][0][c], "L[0][$c]"));
+  }
+
+  // Quick debug check in your console to verify the count
+  String finalSignature = sig.toString();
+  int onesCount = finalSignature.split('1').length - 1;
+  print("Generated Signature: $finalSignature (Ones: $onesCount)");
+
+  return finalSignature;
 }

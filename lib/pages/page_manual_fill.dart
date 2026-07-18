@@ -242,14 +242,6 @@ class _RubiksFaceState extends State<RubiksFace>{
 
   int _currentFace = 0;
 
-  bool get _isComplete => widget.allFaces.every(
-    (face) => face.every(
-      (row) => row.every(
-        (cell) => cell != null, 
-      )
-    ),
-  );
-
   @override
   Widget build(BuildContext context) {
     // TODO: implement build
@@ -302,33 +294,38 @@ class RubiksGridView extends StatefulWidget{
 class StateRubikGridView extends State<RubiksGridView>{
 
   void _paintCell(int row, int col) {
-    final oldColor = widget.allFaces[widget.selectedFace][row][col];
-    final newColor = widget.selectedColor;
+  final oldColor = widget.allFaces[widget.selectedFace][row][col];
+  
+  final colorToApply = (widget.selectedColor == oldColor) ? null : widget.selectedColor;
 
-    if(newColor == oldColor) return;
+  if (colorToApply == null && oldColor == null) return;
 
-    final newIndex = defaultColorValue.indexOf(newColor);
-    final remaining = widget.cellsRemainingNotifier.value;
-    if (newIndex != -1 && remaining[newIndex] <= 0) return; // ← add this
+  final newIndex = colorToApply != null ? defaultColorValue.indexOf(colorToApply) : -1;
+  final remaining = widget.cellsRemainingNotifier.value;
+  
+  //Check if out of color
+  if (newIndex != -1 && remaining[newIndex] <= 0) return; 
 
-    setState(() {
-      widget.allFaces[widget.selectedFace][row][col] = newColor;
-    });
+  //Update UI
+  setState(() {
+    widget.allFaces[widget.selectedFace][row][col] = colorToApply;
+  });
 
-    final oldIndex = oldColor != null ? defaultColorValue.indexOf(oldColor) : -1;
+  final oldIndex = oldColor != null ? defaultColorValue.indexOf(oldColor) : -1;
+  final updated = List<int>.from(widget.cellsRemainingNotifier.value);
+  
+  //Update color numbering
+  if (newIndex != -1) updated[newIndex]--; 
+  if (oldIndex != -1) updated[oldIndex]++; 
+  
+  widget.cellsRemainingNotifier.value = updated;
 
-    final updated = List<int>.from(widget.cellsRemainingNotifier.value);
-    if (newIndex != -1) updated[newIndex]--; 
-    if (oldIndex != -1) updated[oldIndex]++; 
-    widget.cellsRemainingNotifier.value = updated;
-
-    widget.isRubikComplete(_isComplete);
-  }
-
+  widget.isRubikComplete(_isComplete);
+}
   bool get _isComplete => widget.allFaces.every(
     (face) => face.every(
       (row) => row.every(
-        (cell) => cell != null, 
+        (cell) => (cell != Colors.grey && cell != null), 
       )
     ),
   );
@@ -349,7 +346,7 @@ class StateRubikGridView extends State<RubiksGridView>{
                 onTap: () => _paintCell(row, col),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: widget.allFaces[widget.selectedFace][row][col],
+                    color: widget.allFaces[widget.selectedFace][row][col] ?? Colors.grey, //none,
                     shape: BoxShape.rectangle,
                     borderRadius: BorderRadius.circular(2),
                     border: Border.all(color: Colors.black),

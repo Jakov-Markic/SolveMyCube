@@ -1,129 +1,3 @@
-/* import 'cfop.dart';
-
-
-String solvePLL(RubiksCube cube) {
-  StringBuffer steps = StringBuffer();
-
-  // --- STEP 1: Permute Corners (Look for Headlights) ---
-  bool foundHeadlights = false;
-  int headlightRotations = 0;
-
-  for (int i = 0; i < 4; i++) {
-    if (cube.grid[Face.F.index][0][0] == cube.grid[Face.F.index][0][2]) {
-      foundHeadlights = true;
-      break;
-    }
-    cube.executeSequence("U");
-    steps.write("U ");
-    headlightRotations++;
-  }
-
-  if (foundHeadlights) {
-    // Move headlights to the Left face so T-Perm can process them
-    cube.executeSequence("U"); 
-    steps.write("U ");
-    
-    // Execute T-Perm algorithm to fix all corners relative to each other
-    String tPerm = "R U R' U' R' F R2 U' R' U' R U R' F'";
-    cube.executeSequence(tPerm);
-    steps.write("$tPerm ");
-  } else {
-    // No headlights exist anywhere (E-Perm/V-Perm scenario)
-    // Run an initial T-Perm to create a set of headlights, then process them
-    String tPerm = "R U R' U' R' F R2 U' R' U' R U R' F'";
-    cube.executeSequence(tPerm);
-    steps.write("$tPerm ");
-    
-    // Find where the new headlights landed and put them on the Left Face
-    /* while (cube.grid[Face.L.index][0][0] != cube.grid[Face.L.index][0][2]) {
-      cube.executeSequence("U");
-      steps.write("U ");
-    } */
-    int uAttempts = 0;
-    while (cube.grid[Face.U.index][0][1] != cube.grid[Face.U.index][0][2]) {
-      cube.executeSequence("U");
-      steps.write("U ");
-      uAttempts++;
-      if (uAttempts >= 4) {
-        throw StateError('PLL failed after 4 U turns — condition unreachable.');
-      }
-    }
-    
-    cube.executeSequence(tPerm);
-    steps.write("$tPerm ");
-  }
-
-  // Align corners to their actual matching side centers
-  /* while (cube.grid[Face.F.index][0][0] != cube.getCenterColor(Face.F)) {
-    cube.executeSequence("U");
-    steps.write("U ");
-  } */
-  int uAttempts = 0;
-    while (cube.grid[Face.U.index][0][0] != cube.getCenterColor(Face.F)) {
-      cube.executeSequence("U");
-      steps.write("U ");
-      uAttempts++;
-      if (uAttempts >= 4) {
-        throw StateError('PLL failed after 4 U turns — condition unreachable.');
-      }
-    }
-
-  // --- STEP 2: Permute Edges (U-Perm Loop) ---
-  // All corners are now solved. Only edges remain.
-  int safetyTimeout = 0;
-  while (!cube.checkPLL() && safetyTimeout < 6) {
-    safetyTimeout++;
-
-    // Find if there is a fully completed side face bar
-    int solvedSideOffset = -1;
-    List<Face> sides = [Face.B, Face.L, Face.F, Face.R]; // Order matching standard back-placement
-    for (int i = 0; i < 4; i++) {
-      Face face = sides[i];
-      if (cube.grid[face.index][0][0] == cube.grid[face.index][0][1]) {
-        solvedSideOffset = i;
-        break;
-      }
-    }
-
-    if (solvedSideOffset != -1) {
-      // Rotate the entire cube so that the fully solved side face is facing Back (B)
-      for (int i = 0; i < solvedSideOffset; i++) {
-        cube.rotateCubeY();
-        //steps.write("Y ");
-      }
-    }
-
-    // Apply the standard clockwise U-Perm edge cycler
-    String uPerm = "R2 U R U R' U' R' U' R' U R'";
-    cube.executeSequence(uPerm);
-    steps.write("$uPerm ");
-
-    // Rotate the cube back if we turned it using Y
-    if (solvedSideOffset != -1) {
-      for (int i = 0; i < (4 - solvedSideOffset) % 4; i++) {
-        cube.rotateCubeY();
-      }
-    }
-  }
-
-  // Final alignment adjustment layer shift
-  /* while (cube.grid[Face.F.index][0][0] != cube.getCenterColor(Face.F)) {
-    cube.executeSequence("U");
-    steps.write("U ");
-  } */
-  uAttempts = 0;
-    while (cube.grid[Face.U.index][0][0] != cube.getCenterColor(Face.F)) {
-      cube.executeSequence("U");
-      steps.write("U ");
-      uAttempts++;
-      if (uAttempts >= 4) {
-        throw StateError('OLL L-shape alignment failed after 4 U turns — condition unreachable.');
-      }
-    }
-
-  return steps.toString().trim().replaceAll(RegExp(r'\s+'), ' ');
-} */
-
 import 'package:flutter/material.dart';
 import 'cfop.dart';
 
@@ -176,7 +50,7 @@ final Map<String, String> standardPLLAlgorithms = {
   "010101232323": "M2 U M2 U M' U2 M2 U2 M' U2", // Z Perm
 };
 
-String solvePLL(RubiksCube cube) {
+/* String solvePLL(RubiksCube cube) {
   StringBuffer steps = StringBuffer();
 
   // A full PLL case might require an initial U turn (Pre-AUF) to match the algorithm's angle
@@ -210,8 +84,79 @@ String solvePLL(RubiksCube cube) {
   }
 
   throw StateError("Cube is in an invalid PLL state or the case signature isn't in the 21-PLL database.");
+} */
+
+String solvePLL(RubiksCube cube) {
+  StringBuffer steps = StringBuffer();
+
+  bool matchColors(Color c1, Color c2) => 
+      c1.red == c2.red && c1.green == c2.green && c1.blue == c2.blue;
+
+  // 1. Loop through all 4 whole-cube angles (Y axis)
+  for (int yRot = 0; yRot < 4; yRot++) {
+    
+    // 2. Loop through all 4 top-layer angles (U axis)
+    for (int uRot = 0; uRot < 4; uRot++) {
+      String currentSignature = _getPLLSignature(cube);
+
+      if (standardPLLAlgorithms.containsKey(currentSignature)) {
+        String algorithm = standardPLLAlgorithms[currentSignature]!;
+        //cube.executeSequence(algorithm);
+        steps.write("$algorithm ");
+        
+        // Final AUF Alignment
+        int aufAttempts = 0;
+        while (!matchColors(cube.grid[Face.F.index][0][1], cube.getCenterColor(Face.F))) {
+          //cube.executeSequence("U");
+          steps.write("U ");
+          aufAttempts++;
+          if (aufAttempts >= 4) throw StateError("Final AUF alignment failed.");
+        }
+        
+        return steps.toString().trim().replaceAll(RegExp(r'\s+'), ' ');
+      }
+
+      // Turn top layer
+      //cube.executeSequence("U");
+      steps.write("U ");
+    }
+
+    // Rotate the entire cube to check the next spatial angle profile
+    cube.rotateCubeY();
+    steps.write("y ");
+  }
+
+  throw StateError("Cube is in an invalid PLL state or signature is missing from database.");
 }
 
+String _getPLLSignature(RubiksCube cube) {
+  StringBuffer sig = StringBuffer();
+
+  Color colorF = cube.getCenterColor(Face.F);
+  Color colorR = cube.getCenterColor(Face.R);
+  Color colorB = cube.getCenterColor(Face.B);
+  Color colorL = cube.getCenterColor(Face.L);
+
+  String getColorCode(Color color) {
+    bool match(Color c1, Color c2) => c1.red == c2.red && c1.green == c2.green && c1.blue == c2.blue;
+    if (match(color, colorF)) return "0";
+    if (match(color, colorR)) return "1";
+    if (match(color, colorB)) return "2";
+    if (match(color, colorL)) return "3";
+    return "?";
+  }
+
+  // Uniform clockwise reading order matches your exact database layout keys
+  final sideFaces = [Face.F, Face.R, Face.B, Face.L];
+  for (var face in sideFaces) {
+    for (int c = 0; c < 3; c++) {
+      sig.write(getColorCode(cube.grid[face.index][0][c]));
+    }
+  }
+
+  return sig.toString();
+}
+/* 
 /// Generates a strict 12-character relative color index string signature of the side layer states.
 String _getPLLSignature(RubiksCube cube) {
   StringBuffer sig = StringBuffer();
@@ -250,4 +195,4 @@ String _getPLLSignature(RubiksCube cube) {
   }
 
   return sig.toString();
-}
+} */

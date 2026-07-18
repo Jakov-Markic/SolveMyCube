@@ -12,7 +12,9 @@ enum Move {
   U, UPrime, U2, u,
   B, BPrime, B2, b,
   L, LPrime, L2, l,
-  D, DPrime, D2, d
+  D, DPrime, D2, d,
+  M, MPrime,
+  x, y, z
 }
 
 class RubiksCube {
@@ -64,6 +66,11 @@ class RubiksCube {
       case "D'":  return Move.DPrime;
       case 'D2':  return Move.D2;
       case 'd':   return Move.d;
+
+      case 'x': return Move.x;
+      case 'y': return Move.y;
+      case 'z': return Move.z;
+
       default:    return null;
     }
   }
@@ -191,7 +198,36 @@ class RubiksCube {
         applyMove(Move.F);
         _rotateCubeZ();
         break;
-        
+
+      // inside applyMove(Move move):
+      case Move.M:
+        // An M move turns the middle slice down (follows L direction)
+        // You can achieve this by rotating the whole cube like an L move, 
+        // turning U, then reversing it, while counter-acting the side moves.
+        // Alternatively, treat it as: turn the whole cube X' (down), turn R, turn L'
+        _rotateCubeXPrime();
+        applyMove(Move.R);
+        applyMove(Move.LPrime);
+        break;
+      case Move.MPrime:
+        _rotateCubeX();
+        applyMove(Move.RPrime);
+        applyMove(Move.L);
+        break;
+              
+      case Move.x:
+        _rotateCubeX();
+        break;
+      case Move.y:
+        rotateCubeY();
+        break;
+      case Move.z:
+        _rotateCubeZ();
+        break;
+
+      default:
+        print("Unknown move");
+        break;    
     }
   }
   void _rotateFaceClockwise(Face face) {
@@ -304,17 +340,17 @@ class RubiksCube {
     grid[Face.B.index] = oldL;
     grid[Face.L.index] = oldF;
   }
-  void _rotateCubeYPrime() {
-  _rotateFaceCounterClockwise(Face.U);
-  _rotateFaceClockwise(Face.D);
-
-  var tempF = grid[Face.F.index];
   
-  grid[Face.F.index] = grid[Face.R.index];
-  grid[Face.R.index] = grid[Face.B.index];
-  grid[Face.B.index] = grid[Face.L.index];
-  grid[Face.L.index] = tempF;
-}
+  void _rotateCubeYPrime() {
+    _rotateFaceCounterClockwise(Face.U);
+    _rotateFaceClockwise(Face.D);
+
+    var tempF = grid[Face.F.index];
+    grid[Face.F.index] = grid[Face.L.index]; 
+    grid[Face.L.index] = grid[Face.B.index]; 
+    grid[Face.B.index] = grid[Face.R.index]; 
+    grid[Face.R.index] = tempF;              
+  }
 
   /// Rotates the entire cube along the Z-axis (Tilts right, Up goes Right)
   void _rotateCubeZ() {
@@ -369,7 +405,7 @@ class RubiksCube {
   }
 
   bool checkF2L() {
-    if (!checkBottomCross()) return false;
+    
     List<Face> sides = [Face.F, Face.R, Face.B, Face.L];
     for (var face in sides) {
       Color centerColor = getCenterColor(face);
@@ -383,7 +419,7 @@ class RubiksCube {
   }
 
   bool checkOLL() {
-    if (!checkF2L()) return false;
+    
     Color targetU = getCenterColor(Face.U);
     for (int r = 0; r < 3; r++) {
       for (int c = 0; c < 3; c++) {
@@ -394,7 +430,7 @@ class RubiksCube {
   }
 
   bool checkPLL() {
-    if (!checkOLL()) return false;
+    
     for (var face in Face.values) {
       Color centerColor = getCenterColor(face);
       for (int r = 0; r < 3; r++) {

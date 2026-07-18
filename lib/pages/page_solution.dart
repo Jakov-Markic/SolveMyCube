@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:solve_my_cube/algorithms/cfop/bottom_cross.dart';
+import 'package:solve_my_cube/algorithms/cfop/f2l.dart';
 import '../algorithms/cfop/cfop.dart';
 
 class PageSolution extends StatelessWidget{
@@ -14,8 +16,8 @@ class PageSolution extends StatelessWidget{
   Widget build(BuildContext context) {
     // TODO: implement build
     // Calculate it once per build cycle
-    final String solution = solveCfop(cubeFaces);
-
+    final RubiksCube currentCube = RubiksCube(cubeFaces);
+    String solution = solveF2L(currentCube);
     return Scaffold(
       body: Center( // Added Center to make Column alignment work properly
         child: Column(
