@@ -50,42 +50,6 @@ final Map<String, String> standardPLLAlgorithms = {
   "010101232323": "M2 U M2 U M' U2 M2 U2 M' U2", // Z Perm
 };
 
-/* String solvePLL(RubiksCube cube) {
-  StringBuffer steps = StringBuffer();
-
-  // A full PLL case might require an initial U turn (Pre-AUF) to match the algorithm's angle
-  for (int rotation = 0; rotation < 4; rotation++) {
-    String currentSignature = _getPLLSignature(cube);
-
-    if (standardPLLAlgorithms.containsKey(currentSignature)) {
-      String algorithm = standardPLLAlgorithms[currentSignature]!;
-      cube.executeSequence(algorithm);
-      steps.write("$algorithm ");
-      
-      // --- Final AUF (Alignment of Upper Face) ---
-      // The algorithm permutes the pieces correctly relative to each other, 
-      // but the entire layer might need a final turn to match its side centers.
-      int aufAttempts = 0;
-      while (cube.grid[Face.F.index][0][1] != cube.getCenterColor(Face.F)) {
-        cube.executeSequence("U");
-        steps.write("U ");
-        aufAttempts++;
-        if (aufAttempts >= 4) {
-          throw StateError("PLL executed successfully, but final AUF alignment failed.");
-        }
-      }
-      
-      return steps.toString().trim().replaceAll(RegExp(r'\s+'), ' ');
-    }
-
-    // If no case matches the current orientation, turn the U layer and try again
-    cube.executeSequence("U");
-    steps.write("U ");
-  }
-
-  throw StateError("Cube is in an invalid PLL state or the case signature isn't in the 21-PLL database.");
-} */
-
 String solvePLL(RubiksCube cube) {
   StringBuffer steps = StringBuffer();
 
@@ -99,15 +63,28 @@ String solvePLL(RubiksCube cube) {
     for (int uRot = 0; uRot < 4; uRot++) {
       String currentSignature = _getPLLSignature(cube);
 
+      // --- Check A: PLL is already solved (or solved after U rotation / PLL Skip) ---
+      if (currentSignature == "000111222333") {
+        int aufAttempts = 0;
+        while (!matchColors(cube.grid[Face.F.index][0][1], cube.getCenterColor(Face.F))) {
+          cube.executeSequence("U");
+          steps.write("U ");
+          aufAttempts++;
+          if (aufAttempts >= 4) throw StateError("Final AUF alignment failed.");
+        }
+        return steps.toString().trim().replaceAll(RegExp(r'\s+'), ' ');
+      }
+
+      // --- Check B: Active PLL algorithm match ---
       if (standardPLLAlgorithms.containsKey(currentSignature)) {
         String algorithm = standardPLLAlgorithms[currentSignature]!;
-        //cube.executeSequence(algorithm);
+        cube.executeSequence(algorithm);
         steps.write("$algorithm ");
         
         // Final AUF Alignment
         int aufAttempts = 0;
         while (!matchColors(cube.grid[Face.F.index][0][1], cube.getCenterColor(Face.F))) {
-          //cube.executeSequence("U");
+          cube.executeSequence("U");
           steps.write("U ");
           aufAttempts++;
           if (aufAttempts >= 4) throw StateError("Final AUF alignment failed.");
@@ -116,8 +93,8 @@ String solvePLL(RubiksCube cube) {
         return steps.toString().trim().replaceAll(RegExp(r'\s+'), ' ');
       }
 
-      // Turn top layer
-      //cube.executeSequence("U");
+      // Turn top layer to search for the next rotation
+      cube.executeSequence("U");
       steps.write("U ");
     }
 
@@ -156,43 +133,3 @@ String _getPLLSignature(RubiksCube cube) {
 
   return sig.toString();
 }
-/* 
-/// Generates a strict 12-character relative color index string signature of the side layer states.
-String _getPLLSignature(RubiksCube cube) {
-  StringBuffer sig = StringBuffer();
-
-  // Fetch the fixed center colors for side reference
-  Color colorF = cube.getCenterColor(Face.F);
-  Color colorR = cube.getCenterColor(Face.R);
-  Color colorB = cube.getCenterColor(Face.B);
-  Color colorL = cube.getCenterColor(Face.L);
-
-  // Helper method to translate a sticker color into a relative index string
-  String getColorCode(Color color) {
-    if (color == colorF) return "0";
-    if (color == colorR) return "1";
-    if (color == colorB) return "2";
-    if (color == colorL) return "3";
-    return "?"; // Error boundary safeguard for un-unwrapped/corrupt states
-  }
-
-  // Read adjacent outer top stickers clockwise: Front, Right, Back, Left
-  // 1. Front face top row
-  for (int c = 0; c < 3; c++) {
-    sig.write(getColorCode(cube.grid[Face.F.index][0][c]));
-  }
-  // 2. Right face top row
-  for (int c = 0; c < 3; c++) {
-    sig.write(getColorCode(cube.grid[Face.R.index][0][c]));
-  }
-  // 3. Back face top row
-  for (int c = 0; c < 3; c++) {
-    sig.write(getColorCode(cube.grid[Face.B.index][0][c]));
-  }
-  // 4. Left face top row
-  for (int c = 0; c < 3; c++) {
-    sig.write(getColorCode(cube.grid[Face.L.index][0][c]));
-  }
-
-  return sig.toString();
-} */

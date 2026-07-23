@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:solve_my_cube/algorithms/cfop/bottom_cross.dart';
 import 'cfop.dart';
 
 
@@ -7,10 +6,6 @@ import 'cfop.dart';
 
 String solveF2L(RubiksCube cube) {
   StringBuffer steps = StringBuffer();
-
-  if(!cube.checkBottomCross()){
-    steps.write(solveBottomCross(cube));
-  }
 
   // Step A: Solve the 4 bottom corners first
   for (int i = 0; i < 4; i++) {

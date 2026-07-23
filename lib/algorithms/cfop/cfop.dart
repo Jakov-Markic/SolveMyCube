@@ -7,14 +7,16 @@ import 'pll.dart';
 enum Face { F, R, U, B, L, D }
 
 enum Move {
-  F, FPrime, F2, f,
-  R, RPrime, R2, r,
-  U, UPrime, U2, u,
-  B, BPrime, B2, b,
-  L, LPrime, L2, l,
-  D, DPrime, D2, d,
-  M, MPrime,
-  x, y, z
+  F, FPrime, F2, f, fPrime,
+  R, RPrime, R2, r, rPrime,
+  U, UPrime, U2, u, uPrime,
+  B, BPrime, B2, b, bPrime,
+  L, LPrime, L2, l, lPrime,
+  D, DPrime, D2, d, dPrime,
+  M, MPrime, M2,
+  x, xPrime, 
+  y, yPrime, 
+  z, zPrime
 }
 
 class RubiksCube {
@@ -34,42 +36,54 @@ class RubiksCube {
     if (move != null) applyMove(move);
   }
   }
-
-  Move? _parseToken(String token) {
+Move? _parseToken(String token) {
     switch (token) {
       case 'F':   return Move.F;
       case "F'":  return Move.FPrime;
       case 'F2':  return Move.F2;
       case 'f':   return Move.f;
+      case "f'":  return Move.fPrime;
 
       case 'R':   return Move.R;
       case "R'":  return Move.RPrime;
       case 'R2':  return Move.R2;
       case 'r':   return Move.r;
+      case "r'":  return Move.rPrime;
 
       case 'U':   return Move.U;
       case "U'":  return Move.UPrime;
       case 'U2':  return Move.U2;
       case 'u':   return Move.u;
+      case "u'":  return Move.uPrime;
 
       case 'B':   return Move.B;
       case "B'":  return Move.BPrime;
       case 'B2':  return Move.B2;
       case 'b':   return Move.b;
+      case "b'":  return Move.bPrime;
 
       case 'L':   return Move.L;
       case "L'":  return Move.LPrime;
       case 'L2':  return Move.L2;
       case 'l':   return Move.l;
+      case "l'":  return Move.lPrime;
 
       case 'D':   return Move.D;
       case "D'":  return Move.DPrime;
       case 'D2':  return Move.D2;
       case 'd':   return Move.d;
+      case "d'":  return Move.dPrime;
 
-      case 'x': return Move.x;
-      case 'y': return Move.y;
-      case 'z': return Move.z;
+      case 'M':   return Move.M;
+      case "M'":  return Move.MPrime;
+      case 'M2':  return Move.M2;
+
+      case 'x':   return Move.x;
+      case "x'":  return Move.xPrime;
+      case 'y':   return Move.y;
+      case "y'":  return Move.yPrime;
+      case 'z':   return Move.z;
+      case "z'":  return Move.zPrime;
 
       default:    return null;
     }
@@ -95,6 +109,10 @@ class RubiksCube {
         applyMove(Move.D);
         _rotateCubeYPrime();
         break;
+      case Move.uPrime:
+        applyMove(Move.DPrime);
+        rotateCubeY();
+        break;
 
       // Down (D) Move
       case Move.D:
@@ -114,6 +132,10 @@ class RubiksCube {
       case Move.d:
         applyMove(Move.U);
         rotateCubeY();
+        break;
+      case Move.dPrime:
+        applyMove(Move.UPrime);
+        _rotateCubeYPrime();
         break;
       
       // Right (R) Move
@@ -135,7 +157,10 @@ class RubiksCube {
         applyMove(Move.L);
         _rotateCubeXPrime();
         break;
-        
+      case Move.rPrime:
+        applyMove(Move.LPrime);
+        _rotateCubeX();
+        break;
 
       // Left (L) Move
       case Move.L:
@@ -156,7 +181,10 @@ class RubiksCube {
         applyMove(Move.R);
         _rotateCubeX();
         break;
-        
+      case Move.lPrime:
+        applyMove(Move.RPrime);
+        _rotateCubeXPrime();
+        break;
 
       // Front (F) Move
       case Move.F:
@@ -177,7 +205,10 @@ class RubiksCube {
         applyMove(Move.B);
         _rotateCubeZPrime();
         break;
-        
+      case Move.fPrime:
+        applyMove(Move.BPrime);
+        _rotateCubeZ();
+        break;
 
       // Back (B) Move
       case Move.B:
@@ -198,13 +229,13 @@ class RubiksCube {
         applyMove(Move.F);
         _rotateCubeZ();
         break;
+      case Move.bPrime:
+        applyMove(Move.FPrime);
+        _rotateCubeZPrime();
+        break;
 
-      // inside applyMove(Move move):
+      // Middle slice moves
       case Move.M:
-        // An M move turns the middle slice down (follows L direction)
-        // You can achieve this by rotating the whole cube like an L move, 
-        // turning U, then reversing it, while counter-acting the side moves.
-        // Alternatively, treat it as: turn the whole cube X' (down), turn R, turn L'
         _rotateCubeXPrime();
         applyMove(Move.R);
         applyMove(Move.LPrime);
@@ -214,15 +245,29 @@ class RubiksCube {
         applyMove(Move.RPrime);
         applyMove(Move.L);
         break;
+      case Move.M2:
+        applyMove(Move.M);
+        applyMove(Move.M);
+        break;
               
+      // Whole cube rotations
       case Move.x:
         _rotateCubeX();
+        break;
+      case Move.xPrime:
+        _rotateCubeXPrime();
         break;
       case Move.y:
         rotateCubeY();
         break;
+      case Move.yPrime:
+        _rotateCubeYPrime();
+        break;
       case Move.z:
         _rotateCubeZ();
+        break;
+      case Move.zPrime:
+        _rotateCubeZPrime();
         break;
 
       default:
@@ -451,28 +496,28 @@ String solveCfop(List<List<List<Color>>> cubeFaces) {
   // 1. Cross Phase
   if (!cube.checkBottomCross()) {
     String crossSteps = solveBottomCross(cube);
-    cube.executeSequence(crossSteps);
+    //cube.executeSequence(crossSteps);
     completeSolution.write("$crossSteps ");
   }
 
   // 2. F2L Phase
   if (!cube.checkF2L()) {
     String f2lSteps = solveF2L(cube);
-    cube.executeSequence(f2lSteps);
+    //cube.executeSequence(f2lSteps);
     completeSolution.write("$f2lSteps ");
   }
 
   // 3. OLL Phase
   if (!cube.checkOLL()) {
     String ollSteps = solveOLL(cube);
-    cube.executeSequence(ollSteps);
+    //cube.executeSequence(ollSteps);
     completeSolution.write("$ollSteps ");
   }
 
   // 4. PLL Phase
   if (!cube.checkPLL()) {
     String pllSteps = solvePLL(cube);
-    cube.executeSequence(pllSteps);
+    //cube.executeSequence(pllSteps);
     completeSolution.write(pllSteps);
   }
 

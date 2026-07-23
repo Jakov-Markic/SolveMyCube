@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:solve_my_cube/algorithms/cfop/f2l.dart';
 import 'cfop.dart';
 
 // 1. Define the 57 standard OLL algorithms mapping (Case Number -> Algorithm)
@@ -73,13 +74,13 @@ String solveOLL(RubiksCube cube) {
   print("Rotation $rotation Signature: $currentSignature (Ones: ${currentSignature.split('1').length - 1})");
     if (standardOLLAlgorithms.containsKey(currentSignature)) {
       String algorithm = standardOLLAlgorithms[currentSignature]!;
-      //cube.executeSequence(algorithm);
+      cube.executeSequence(algorithm);
       steps.write(algorithm);
       return steps.toString().trim();
     }
 
     // If no case matches the current orientation, turn the U layer and try again
-    //cube.executeSequence("U");
+    cube.executeSequence("U");
     steps.write("U ");
   }
 
