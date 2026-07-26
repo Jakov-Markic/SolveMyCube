@@ -1,0 +1,1 @@
+//This file will contain general repesentation of rubik's cube
