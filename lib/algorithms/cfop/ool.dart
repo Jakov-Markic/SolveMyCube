@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:solve_my_cube/algorithms/cfop/f2l.dart';
+import '../../color_utils.dart';
 import 'cfop.dart';
 
 // 1. Define the 57 standard OLL algorithms mapping (Case Number -> Algorithm)
@@ -90,37 +91,14 @@ String solveOLL(RubiksCube cube) {
 
 /// Generates a strict 21-character binary string signature of the top layer state.
 String _getOLLSignature(RubiksCube cube, Color targetU) {
-  /* StringBuffer sig = StringBuffer();
-
-  // 1. Read the 9 stickers on the Up face (rows 0-2, cols 0-2)
-  for (int r = 0; r < 3; r++) {
-    for (int c = 0; c < 3; c++) {
-      sig.write(cube.grid[Face.U.index][r][c] == targetU ? "1" : "0");
-      print("${targetU} == ${cube.grid[Face.U.index][r][c]}");
-    }
-  }
-
-  // 2. Read adjacent outer top stickers in a fixed order (Front, Right, Back, Left)
-  // Front face top row
-  for (int c = 0; c < 3; c++) {sig.write(cube.grid[Face.F.index][0][c] == targetU ? "1" : "0");}
-  // Right face top row
-  for (int c = 0; c < 3; c++) {sig.write(cube.grid[Face.R.index][0][c] == targetU ? "1" : "0");}
-  // Back face top row
-  for (int c = 0; c < 3; c++) {sig.write(cube.grid[Face.B.index][0][c] == targetU ? "1" : "0");}
-  // Left face top row
-  for (int c = 0; c < 3; c++) {sig.write(cube.grid[Face.L.index][0][c] == targetU ? "1" : "0");}
-
-  return sig.toString(); */
   StringBuffer sig = StringBuffer();
 
-  // 1. Helper function to check colors by their exact RGB values
+  // 1. Helper function to check colors using ColorUtils tolerance
   String checkColor(Color? gridColor, String label) {
     if (gridColor == null) return "0";
     
-    // Check if the RGB channels match perfectly
-    bool isMatch = gridColor.red == targetU.red && 
-                   gridColor.green == targetU.green && 
-                   gridColor.blue == targetU.blue;
+    // FIX: Using your utility instead of strict RGB matching
+    bool isMatch = ColorUtils.areColorsEqual(gridColor, targetU);
                    
     return isMatch ? "1" : "0";
   }
@@ -141,7 +119,7 @@ String _getOLLSignature(RubiksCube cube, Color targetU) {
   for (int c = 0; c < 3; c++) {
     sig.write(checkColor(cube.grid[Face.R.index][0][c], "R[0][$c]"));
   }
-  // Back face top row (Changed from 2->0 to 0->2 to keep string mutations uniform!)
+  // Back face top row
   for (int c = 0; c < 3; c++) {
     sig.write(checkColor(cube.grid[Face.B.index][0][c], "B[0][$c]"));
   }

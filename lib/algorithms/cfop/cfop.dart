@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'bottom_cross.dart';
+import '../../color_utils.dart';
 import 'f2l.dart';
 import 'ool.dart';
 import 'pll.dart';
@@ -7,12 +8,12 @@ import 'pll.dart';
 enum Face { F, R, U, B, L, D }
 
 enum Move {
-  F, FPrime, F2, f, fPrime,
-  R, RPrime, R2, r, rPrime,
-  U, UPrime, U2, u, uPrime,
-  B, BPrime, B2, b, bPrime,
-  L, LPrime, L2, l, lPrime,
-  D, DPrime, D2, d, dPrime,
+  F, FPrime, F2, f, fPrime, f2,
+  R, RPrime, R2, r, rPrime, r2,
+  U, UPrime, U2, u, uPrime, u2,
+  B, BPrime, B2, b, bPrime, b2,
+  L, LPrime, L2, l, lPrime, l2,
+  D, DPrime, D2, d, dPrime, d2,
   M, MPrime, M2,
   x, xPrime, 
   y, yPrime, 
@@ -29,50 +30,57 @@ class RubiksCube {
 
   /// Parses standard algorithm notation strings and executes them sequentially.
   void executeSequence(String sequence) {
-  if (sequence.trim().isEmpty) return;
-  List<String> tokens = sequence.split(RegExp(r'\s+'));
-  for (String token in tokens) {
-    Move? move = _parseToken(token);
-    if (move != null) applyMove(move);
+    if (sequence.trim().isEmpty) return;
+    List<String> tokens = sequence.split(RegExp(r'\s+'));
+    for (String token in tokens) {
+      Move? move = _parseToken(token);
+      if (move != null) applyMove(move);
+    }
   }
-  }
-Move? _parseToken(String token) {
+
+  Move? _parseToken(String token) {
     switch (token) {
       case 'F':   return Move.F;
       case "F'":  return Move.FPrime;
       case 'F2':  return Move.F2;
       case 'f':   return Move.f;
       case "f'":  return Move.fPrime;
+      case "f2":  return Move.f2;
 
       case 'R':   return Move.R;
       case "R'":  return Move.RPrime;
       case 'R2':  return Move.R2;
       case 'r':   return Move.r;
       case "r'":  return Move.rPrime;
+      case "r2":  return Move.r2;
 
       case 'U':   return Move.U;
       case "U'":  return Move.UPrime;
       case 'U2':  return Move.U2;
       case 'u':   return Move.u;
       case "u'":  return Move.uPrime;
+      case "u2":  return Move.u2;
 
       case 'B':   return Move.B;
       case "B'":  return Move.BPrime;
       case 'B2':  return Move.B2;
       case 'b':   return Move.b;
       case "b'":  return Move.bPrime;
+      case "b2":  return Move.b2;
 
       case 'L':   return Move.L;
       case "L'":  return Move.LPrime;
       case 'L2':  return Move.L2;
       case 'l':   return Move.l;
       case "l'":  return Move.lPrime;
+      case "l2":  return Move.l2;
 
       case 'D':   return Move.D;
       case "D'":  return Move.DPrime;
       case 'D2':  return Move.D2;
       case 'd':   return Move.d;
       case "d'":  return Move.dPrime;
+      case "d2":  return Move.d2;
 
       case 'M':   return Move.M;
       case "M'":  return Move.MPrime;
@@ -92,7 +100,7 @@ Move? _parseToken(String token) {
   /// Master function handling all moves via Whole-Cube Rotations
   void applyMove(Move move) {
     switch (move) {
-      // Base Core Move: Up (U)
+      // Up (U)
       case Move.U:
         _rotateFaceClockwise(Face.U);
         _shiftHorizontalRing(clockwise: true);
@@ -105,16 +113,22 @@ Move? _parseToken(String token) {
         applyMove(Move.U);
         applyMove(Move.U);
         break;
+
+      // Wide u (U + E)
       case Move.u:
-        applyMove(Move.D);
-        _rotateCubeYPrime();
-        break;
-      case Move.uPrime:
         applyMove(Move.DPrime);
         rotateCubeY();
         break;
+      case Move.uPrime:
+        applyMove(Move.D);
+        _rotateCubeYPrime();
+        break;
+      case Move.u2:
+        applyMove(Move.u);
+        applyMove(Move.u);
+        break;
 
-      // Down (D) Move
+      // Down (D)
       case Move.D:
         _rotateCubeX(); _rotateCubeX();
         applyMove(Move.U);
@@ -129,16 +143,22 @@ Move? _parseToken(String token) {
         applyMove(Move.D);
         applyMove(Move.D);
         break;
+
+      // Wide d (D + E')
       case Move.d:
         applyMove(Move.U);
-        rotateCubeY();
+        _rotateCubeYPrime();
         break;
       case Move.dPrime:
         applyMove(Move.UPrime);
-        _rotateCubeYPrime();
+        rotateCubeY();
         break;
-      
-      // Right (R) Move
+      case Move.d2:
+        applyMove(Move.d);
+        applyMove(Move.d);
+        break;
+
+      // Right (R)
       case Move.R:
         _rotateCubeZPrime();
         applyMove(Move.U);
@@ -153,16 +173,22 @@ Move? _parseToken(String token) {
         applyMove(Move.R);
         applyMove(Move.R);
         break;
+
+      // Wide r (R + M')
       case Move.r:
-        applyMove(Move.L);
-        _rotateCubeXPrime();
-        break;
-      case Move.rPrime:
         applyMove(Move.LPrime);
         _rotateCubeX();
         break;
+      case Move.rPrime:
+        applyMove(Move.L);
+        _rotateCubeXPrime();
+        break;
+      case Move.r2:
+        applyMove(Move.r);
+        applyMove(Move.r);
+        break;
 
-      // Left (L) Move
+      // Left (L)
       case Move.L:
         _rotateCubeZ();
         applyMove(Move.U);
@@ -177,16 +203,22 @@ Move? _parseToken(String token) {
         applyMove(Move.L);
         applyMove(Move.L);
         break;
+
+      // Wide l (L + M)
       case Move.l:
-        applyMove(Move.R);
-        _rotateCubeX();
-        break;
-      case Move.lPrime:
         applyMove(Move.RPrime);
         _rotateCubeXPrime();
         break;
+      case Move.lPrime:
+        applyMove(Move.R);
+        _rotateCubeX();
+        break;
+      case Move.l2:
+        applyMove(Move.l);
+        applyMove(Move.l);
+        break;
 
-      // Front (F) Move
+      // Front (F)
       case Move.F:
         _rotateCubeX();
         applyMove(Move.U);
@@ -201,16 +233,22 @@ Move? _parseToken(String token) {
         applyMove(Move.F);
         applyMove(Move.F);
         break;
+
+      // Wide f (F + S)
       case Move.f:
-        applyMove(Move.B);
-        _rotateCubeZPrime();
-        break;
-      case Move.fPrime:
         applyMove(Move.BPrime);
         _rotateCubeZ();
         break;
+      case Move.fPrime:
+        applyMove(Move.B);
+        _rotateCubeZPrime();
+        break;
+      case Move.f2:
+        applyMove(Move.f);
+        applyMove(Move.f);
+        break;
 
-      // Back (B) Move
+      // Back (B)
       case Move.B:
         _rotateCubeXPrime();
         applyMove(Move.U);
@@ -225,31 +263,37 @@ Move? _parseToken(String token) {
         applyMove(Move.B);
         applyMove(Move.B);
         break;
+
+      // Wide b (B + S')
       case Move.b:
+        applyMove(Move.FPrime);
+        _rotateCubeZPrime();
+        break;
+      case Move.bPrime:
         applyMove(Move.F);
         _rotateCubeZ();
         break;
-      case Move.bPrime:
-        applyMove(Move.FPrime);
-        _rotateCubeZPrime();
+      case Move.b2:
+        applyMove(Move.b);
+        applyMove(Move.b);
         break;
 
       // Middle slice moves
       case Move.M:
+        applyMove(Move.L);
+        applyMove(Move.RPrime);
         _rotateCubeXPrime();
-        applyMove(Move.R);
-        applyMove(Move.LPrime);
         break;
       case Move.MPrime:
+        applyMove(Move.LPrime);
+        applyMove(Move.R);
         _rotateCubeX();
-        applyMove(Move.RPrime);
-        applyMove(Move.L);
         break;
       case Move.M2:
         applyMove(Move.M);
         applyMove(Move.M);
         break;
-              
+
       // Whole cube rotations
       case Move.x:
         _rotateCubeX();
@@ -271,10 +315,11 @@ Move? _parseToken(String token) {
         break;
 
       default:
-        print("Unknown move");
+        print("Unknown move: $move");
         break;    
     }
   }
+
   void _rotateFaceClockwise(Face face) {
     int f = face.index;
     List<List<Color>> temp = List.generate(3, (r) => List.generate(3, (c) => grid[f][r][c]));
@@ -305,15 +350,15 @@ Move? _parseToken(String token) {
     List<Color> tempF = [grid[f][0][0], grid[f][0][1], grid[f][0][2]];
 
     if (clockwise) {
-      for (int i = 0; i < 3; i++) {grid[f][0][i] = grid[r][0][i];}
-      for (int i = 0; i < 3; i++) {grid[r][0][i] = grid[b][0][i];}
-      for (int i = 0; i < 3; i++) {grid[b][0][i] = grid[l][0][i];}
-      for (int i = 0; i < 3; i++) {grid[l][0][i] = tempF[i];}
+      for (int i = 0; i < 3; i++) { grid[f][0][i] = grid[r][0][i]; }
+      for (int i = 0; i < 3; i++) { grid[r][0][i] = grid[b][0][i]; }
+      for (int i = 0; i < 3; i++) { grid[b][0][i] = grid[l][0][i]; }
+      for (int i = 0; i < 3; i++) { grid[l][0][i] = tempF[i]; }
     } else {
-      for (int i = 0; i < 3; i++) {grid[f][0][i] = grid[l][0][i];}
-      for (int i = 0; i < 3; i++) {grid[l][0][i] = grid[b][0][i];}
-      for (int i = 0; i < 3; i++) {grid[b][0][i] = grid[r][0][i];}
-      for (int i = 0; i < 3; i++) {grid[r][0][i] = tempF[i];}
+      for (int i = 0; i < 3; i++) { grid[f][0][i] = grid[l][0][i]; }
+      for (int i = 0; i < 3; i++) { grid[l][0][i] = grid[b][0][i]; }
+      for (int i = 0; i < 3; i++) { grid[b][0][i] = grid[r][0][i]; }
+      for (int i = 0; i < 3; i++) { grid[r][0][i] = tempF[i]; }
     }
   }
 
@@ -375,6 +420,7 @@ Move? _parseToken(String token) {
   void rotateCubeY() {
     _rotateFaceClockwise(Face.U);
     _rotateFaceCounterClockwise(Face.D);
+
     var oldF = _getClonedFace(Face.F);
     var oldR = _getClonedFace(Face.R);
     var oldB = _getClonedFace(Face.B);
@@ -385,16 +431,20 @@ Move? _parseToken(String token) {
     grid[Face.B.index] = oldL;
     grid[Face.L.index] = oldF;
   }
-  
+
   void _rotateCubeYPrime() {
     _rotateFaceCounterClockwise(Face.U);
     _rotateFaceClockwise(Face.D);
 
-    var tempF = grid[Face.F.index];
-    grid[Face.F.index] = grid[Face.L.index]; 
-    grid[Face.L.index] = grid[Face.B.index]; 
-    grid[Face.B.index] = grid[Face.R.index]; 
-    grid[Face.R.index] = tempF;              
+    var oldF = _getClonedFace(Face.F);
+    var oldR = _getClonedFace(Face.R);
+    var oldB = _getClonedFace(Face.B);
+    var oldL = _getClonedFace(Face.L);
+
+    grid[Face.F.index] = oldL;
+    grid[Face.R.index] = oldF;
+    grid[Face.B.index] = oldR;
+    grid[Face.L.index] = oldB;
   }
 
   /// Rotates the entire cube along the Z-axis (Tilts right, Up goes Right)
@@ -450,7 +500,6 @@ Move? _parseToken(String token) {
   }
 
   bool checkF2L() {
-    
     List<Face> sides = [Face.F, Face.R, Face.B, Face.L];
     for (var face in sides) {
       Color centerColor = getCenterColor(face);
@@ -464,7 +513,6 @@ Move? _parseToken(String token) {
   }
 
   bool checkOLL() {
-    
     Color targetU = getCenterColor(Face.U);
     for (int r = 0; r < 3; r++) {
       for (int c = 0; c < 3; c++) {
@@ -475,7 +523,6 @@ Move? _parseToken(String token) {
   }
 
   bool checkPLL() {
-    
     for (var face in Face.values) {
       Color centerColor = getCenterColor(face);
       for (int r = 0; r < 3; r++) {
@@ -487,6 +534,7 @@ Move? _parseToken(String token) {
     return true;
   }
 }
+
 // --- CFOP SOLVER ENGINE ---
 
 String solveCfop(List<List<List<Color>>> cubeFaces) {
@@ -496,39 +544,134 @@ String solveCfop(List<List<List<Color>>> cubeFaces) {
   // 1. Cross Phase
   if (!cube.checkBottomCross()) {
     String crossSteps = solveBottomCross(cube);
-    //cube.executeSequence(crossSteps);
     completeSolution.write("$crossSteps ");
   }
+  print("Bottom cross :  $completeSolution \n");
 
   // 2. F2L Phase
   if (!cube.checkF2L()) {
     String f2lSteps = solveF2L(cube);
-    //cube.executeSequence(f2lSteps);
     completeSolution.write("$f2lSteps ");
   }
+  print("F2L :  $completeSolution \n");
 
   // 3. OLL Phase
   if (!cube.checkOLL()) {
     String ollSteps = solveOLL(cube);
-    //cube.executeSequence(ollSteps);
     completeSolution.write("$ollSteps ");
   }
+  print("OLL :  $completeSolution \n");
 
   // 4. PLL Phase
   if (!cube.checkPLL()) {
     String pllSteps = solvePLL(cube);
-    //cube.executeSequence(pllSteps);
     completeSolution.write(pllSteps);
   }
+  print("PLL :  $completeSolution \n");
 
-  return completeSolution.toString().trim();
+  String rawSolution = completeSolution.toString();
+
+  // Minimize and return the clean solution string
+  return optimizeAlgorithm(rawSolution);
+}
+
+/// Optimizes and minimizes a Rubik's Cube move sequence string.
+/// Combines redundant turns (e.g., U U U -> U') and cancels out opposing turns (e.g., U U' -> empty).
+String optimizeAlgorithm(String rawAlgorithm) {
+  if (rawAlgorithm.trim().isEmpty) return "";
+
+  List<String> rawTokens = rawAlgorithm.trim().split(RegExp(r'\s+'));
+  List<_MoveToken> stack = [];
+
+  for (String token in rawTokens) {
+    _MoveToken? current = _MoveToken.parse(token);
+    if (current == null) continue;
+
+    bool merged = false;
+
+    // Look backward down the stack to find if we can merge same-face moves
+    for (int i = stack.length - 1; i >= 0; i--) {
+      if (stack[i].face == current.face) {
+        stack[i].turns = (stack[i].turns + current.turns) % 4;
+
+        if (stack[i].turns == 0) {
+          stack.removeAt(i);
+        }
+        merged = true;
+        break;
+      }
+
+      if (!_doFacesCommute(stack[i].face, current.face)) {
+        break;
+      }
+    }
+
+    if (!merged) {
+      stack.add(current);
+    }
+  }
+
+  return stack
+      .map((m) => m.toString())
+      .where((str) => str.isNotEmpty)
+      .join(" ");
+}
+
+class _MoveToken {
+  final String face;
+  int turns; // 1 = Clockwise, 2 = Double (2), 3 = Counter-clockwise (')
+
+  _MoveToken(this.face, this.turns);
+
+  static _MoveToken? parse(String token) {
+    if (token.isEmpty) return null;
+
+    String face = token;
+    int turns = 1;
+
+    if (token.endsWith("'")) {
+      face = token.substring(0, token.length - 1);
+      turns = 3;
+    } else if (token.endsWith("2")) {
+      face = token.substring(0, token.length - 1);
+      turns = 2;
+    }
+
+    return _MoveToken(face, turns);
+  }
+
+  @override
+  String toString() {
+    int count = turns % 4;
+    if (count == 0) return "";
+    if (count == 1) return face;
+    if (count == 2) return "${face}2";
+    if (count == 3) return "$face'";
+    return "";
+  }
+}
+
+bool _doFacesCommute(String f1, String f2) {
+  if (f1 == f2) return true;
+
+  String u1 = f1.toUpperCase();
+  String u2 = f2.toUpperCase();
+
+  const commutingPairs = {
+    'U': 'D', 'D': 'U',
+    'R': 'L', 'L': 'R',
+    'F': 'B', 'B': 'F',
+  };
+
+  return commutingPairs[u1] == u2;
 }
 // --- UNIVERSAL TRACKING HELPERS ---
-
 bool matchEdge(RubiksCube cube, Face f1, int r1, int c1, Face f2, int r2, int c2, Color target1, Color target2) {
   Color clr1 = cube.grid[f1.index][r1][c1];
   Color clr2 = cube.grid[f2.index][r2][c2];
-  return (clr1 == target1 && clr2 == target2) || (clr1 == target2 && clr2 == target1);
+  
+  return (ColorUtils.areColorsEqual(clr1, target1) && ColorUtils.areColorsEqual(clr2, target2)) ||
+         (ColorUtils.areColorsEqual(clr1, target2) && ColorUtils.areColorsEqual(clr2, target1));
 }
 
 bool matchCorner(RubiksCube cube, Face f1, int r1, int c1, Face f2, int r2, int c2, Face f3, int r3, int c3, Color t1, Color t2, Color t3) {
@@ -537,5 +680,17 @@ bool matchCorner(RubiksCube cube, Face f1, int r1, int c1, Face f2, int r2, int 
     cube.grid[f2.index][r2][c2],
     cube.grid[f3.index][r3][c3]
   ];
-  return currentColors.contains(t1) && currentColors.contains(t2) && currentColors.contains(t3);
+  
+  bool found1 = false, found2 = false, found3 = false;
+  for (var color in currentColors) {
+    if (ColorUtils.areColorsEqual(color, t1) && !found1) {
+      found1 = true;
+    } else if (ColorUtils.areColorsEqual(color, t2) && !found2) {
+      found2 = true;
+    } else if (ColorUtils.areColorsEqual(color, t3) && !found3) {
+      found3 = true;
+    }
+  }
+  
+  return found1 && found2 && found3;
 }

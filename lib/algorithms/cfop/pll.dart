@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'cfop.dart';
+import '../../color_utils.dart'; // Make sure to import your color utils
 
 final Map<String, String> standardPLLAlgorithms = {
   // --- A Permutations ---
@@ -53,9 +54,6 @@ final Map<String, String> standardPLLAlgorithms = {
 String solvePLL(RubiksCube cube) {
   StringBuffer steps = StringBuffer();
 
-  bool matchColors(Color c1, Color c2) => 
-      c1.red == c2.red && c1.green == c2.green && c1.blue == c2.blue;
-
   // 1. Loop through all 4 whole-cube angles (Y axis)
   for (int yRot = 0; yRot < 4; yRot++) {
     
@@ -63,10 +61,10 @@ String solvePLL(RubiksCube cube) {
     for (int uRot = 0; uRot < 4; uRot++) {
       String currentSignature = _getPLLSignature(cube);
 
-      // --- Check A: PLL is already solved (or solved after U rotation / PLL Skip) ---
+      // --- Check A: PLL is already solved ---
       if (currentSignature == "000111222333") {
         int aufAttempts = 0;
-        while (!matchColors(cube.grid[Face.F.index][0][1], cube.getCenterColor(Face.F))) {
+        while (!ColorUtils.areColorsEqual(cube.grid[Face.F.index][0][1], cube.getCenterColor(Face.F))) {
           cube.executeSequence("U");
           steps.write("U ");
           aufAttempts++;
@@ -83,7 +81,7 @@ String solvePLL(RubiksCube cube) {
         
         // Final AUF Alignment
         int aufAttempts = 0;
-        while (!matchColors(cube.grid[Face.F.index][0][1], cube.getCenterColor(Face.F))) {
+        while (!ColorUtils.areColorsEqual(cube.grid[Face.F.index][0][1], cube.getCenterColor(Face.F))) {
           cube.executeSequence("U");
           steps.write("U ");
           aufAttempts++;
@@ -115,11 +113,10 @@ String _getPLLSignature(RubiksCube cube) {
   Color colorL = cube.getCenterColor(Face.L);
 
   String getColorCode(Color color) {
-    bool match(Color c1, Color c2) => c1.red == c2.red && c1.green == c2.green && c1.blue == c2.blue;
-    if (match(color, colorF)) return "0";
-    if (match(color, colorR)) return "1";
-    if (match(color, colorB)) return "2";
-    if (match(color, colorL)) return "3";
+    if (ColorUtils.areColorsEqual(color, colorF)) return "0";
+    if (ColorUtils.areColorsEqual(color, colorR)) return "1";
+    if (ColorUtils.areColorsEqual(color, colorB)) return "2";
+    if (ColorUtils.areColorsEqual(color, colorL)) return "3";
     return "?";
   }
 
