@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'cfop.dart';
-import '../../color_utils.dart'; // Ensure this path matches your project
+import '../rubik_cube.dart';
+import '../../color_utils.dart';
 
 //-- 2. FIRST TWO LAYERS (F2L) SOLVER ---
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../color_utils.dart';
-import 'cfop.dart';
+import '../rubik_cube.dart';
 
 // --- 1. BOTTOM CROSS SOLVER ---
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../color_utils.dart';
-import 'cfop.dart';
+import '../rubik_cube.dart';
 
 // 1. Define the 57 standard OLL algorithms mapping (Case Number -> Algorithm)
 final Map<String, String> standardOLLAlgorithms = {
@@ -64,73 +64,68 @@ final Map<String, String> standardOLLAlgorithms = {
 };
 
 String solveOLL(RubiksCube cube) {
-  StringBuffer steps = StringBuffer();
-  Color targetU = cube.getCenterColor(Face.U);
+  final targetU = cube.getCenterColor(Face.U);
+  final steps = StringBuffer();
 
-  // A full OLL case might be rotated. We check all 4 U-turn variations.
-  for (int rotation = 0; rotation < 4; rotation++) {
-    String currentSignature = _getOLLSignature(cube, targetU);
-// 🔍 Add this to see what your code is actually seeing:
-  print("Rotation $rotation Signature: $currentSignature (Ones: ${currentSignature.split('1').length - 1})");
-    if (standardOLLAlgorithms.containsKey(currentSignature)) {
-      String algorithm = standardOLLAlgorithms[currentSignature]!;
-      cube.executeSequence(algorithm);
-      steps.write(algorithm);
-      return steps.toString().trim();
+  for (int cubeRotation = 0; cubeRotation < 4; cubeRotation++) {
+    for (int topRotation = 0; topRotation < 4; topRotation++) {
+      final candidate = cube.clone();
+
+      for (int i = 0; i < cubeRotation; i++) {
+        candidate.executeSequence('y');
+      }
+      for (int i = 0; i < topRotation; i++) {
+        candidate.executeSequence('U');
+      }
+
+      final signature = getOLLSignature(candidate, targetU);
+      if (standardOLLAlgorithms.containsKey(signature)) {
+        for (int i = 0; i < cubeRotation; i++) {
+          cube.executeSequence('y');
+          steps.write('y ');
+        }
+        for (int i = 0; i < topRotation; i++) {
+          cube.executeSequence('U');
+          steps.write('U ');
+        }
+
+        final algorithm = standardOLLAlgorithms[signature]!;
+        cube.executeSequence(algorithm);
+        steps.write(algorithm);
+        return steps.toString().trim();
+      }
     }
-
-    // If no case matches the current orientation, turn the U layer and try again
-    cube.executeSequence("U");
-    steps.write("U ");
   }
 
-  // If we reach here, either the state is invalid or a signature calculation is misaligned.
-  throw StateError("Cube is in an invalid OOL state or the case signature isn't in the 57-OLL database.");
+  throw StateError('Cube is in an invalid OLL state or the case signature is not in the 57-OLL database.');
 }
 
-/// Generates a strict 21-character binary string signature of the top layer state.
-String _getOLLSignature(RubiksCube cube, Color targetU) {
-  StringBuffer sig = StringBuffer();
+String getOLLSignature(RubiksCube cube, Color targetU) {
+  final sig = StringBuffer();
 
-  // 1. Helper function to check colors using ColorUtils tolerance
-  String checkColor(Color? gridColor, String label) {
-    if (gridColor == null) return "0";
-    
-    // FIX: Using your utility instead of strict RGB matching
-    bool isMatch = ColorUtils.areColorsEqual(gridColor, targetU);
-                   
-    return isMatch ? "1" : "0";
+  String checkColor(Color? gridColor) {
+    if (gridColor == null) return '0';
+    return ColorUtils.areColorsEqual(gridColor, targetU) ? '1' : '0';
   }
 
-  // 2. Read the 9 stickers on the Up face (rows 0-2, cols 0-2)
   for (int r = 0; r < 3; r++) {
     for (int c = 0; c < 3; c++) {
-      sig.write(checkColor(cube.grid[Face.U.index][r][c], "U[$r][$c]"));
+      sig.write(checkColor(cube.grid[Face.U.index][r][c]));
     }
   }
 
-  // 3. Read adjacent outer top stickers in a uniform clockwise order (0 to 2)
-  // Front face top row
   for (int c = 0; c < 3; c++) {
-    sig.write(checkColor(cube.grid[Face.F.index][0][c], "F[0][$c]"));
+    sig.write(checkColor(cube.grid[Face.F.index][0][c]));
   }
-  // Right face top row
   for (int c = 0; c < 3; c++) {
-    sig.write(checkColor(cube.grid[Face.R.index][0][c], "R[0][$c]"));
+    sig.write(checkColor(cube.grid[Face.R.index][0][c]));
   }
-  // Back face top row
   for (int c = 0; c < 3; c++) {
-    sig.write(checkColor(cube.grid[Face.B.index][0][c], "B[0][$c]"));
+    sig.write(checkColor(cube.grid[Face.B.index][0][c]));
   }
-  // Left face top row
   for (int c = 0; c < 3; c++) {
-    sig.write(checkColor(cube.grid[Face.L.index][0][c], "L[0][$c]"));
+    sig.write(checkColor(cube.grid[Face.L.index][0][c]));
   }
 
-  // Quick debug check in your console to verify the count
-  String finalSignature = sig.toString();
-  int onesCount = finalSignature.split('1').length - 1;
-  print("Generated Signature: $finalSignature (Ones: $onesCount)");
-
-  return finalSignature;
+  return sig.toString();
 }

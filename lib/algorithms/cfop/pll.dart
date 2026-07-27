@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'cfop.dart';
-import '../../color_utils.dart'; // Make sure to import your color utils
+import '../rubik_cube.dart';
+import '../../color_utils.dart';
 
 final Map<String, String> standardPLLAlgorithms = {
   // --- A Permutations ---
@@ -53,58 +53,53 @@ final Map<String, String> standardPLLAlgorithms = {
 
 String solvePLL(RubiksCube cube) {
   StringBuffer steps = StringBuffer();
+  final topColor = cube.getCenterColor(Face.U);
+  final seenSignatures = <String>{};
 
-  // 1. Loop through all 4 whole-cube angles (Y axis)
-  for (int yRot = 0; yRot < 4; yRot++) {
-    
-    // 2. Loop through all 4 top-layer angles (U axis)
-    for (int uRot = 0; uRot < 4; uRot++) {
-      String currentSignature = _getPLLSignature(cube);
+  for (int iteration = 0; iteration < 24; iteration++) {
+    final signature = getPLLSignature(cube);
 
-      // --- Check A: PLL is already solved ---
-      if (currentSignature == "000111222333") {
-        int aufAttempts = 0;
-        while (!ColorUtils.areColorsEqual(cube.grid[Face.F.index][0][1], cube.getCenterColor(Face.F))) {
-          cube.executeSequence("U");
-          steps.write("U ");
-          aufAttempts++;
-          if (aufAttempts >= 4) throw StateError("Final AUF alignment failed.");
-        }
-        return steps.toString().trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (signature == "000111222333" || isPLLResolved(cube, topColor)) {
+      int aufAttempts = 0;
+      while (!ColorUtils.areColorsEqual(cube.grid[Face.F.index][0][1], cube.getCenterColor(Face.F))) {
+        cube.executeSequence("U");
+        steps.write("U ");
+        aufAttempts++;
+        if (aufAttempts >= 4) throw StateError("Final AUF alignment failed.");
       }
-
-      // --- Check B: Active PLL algorithm match ---
-      if (standardPLLAlgorithms.containsKey(currentSignature)) {
-        String algorithm = standardPLLAlgorithms[currentSignature]!;
-        cube.executeSequence(algorithm);
-        steps.write("$algorithm ");
-        
-        // Final AUF Alignment
-        int aufAttempts = 0;
-        while (!ColorUtils.areColorsEqual(cube.grid[Face.F.index][0][1], cube.getCenterColor(Face.F))) {
-          cube.executeSequence("U");
-          steps.write("U ");
-          aufAttempts++;
-          if (aufAttempts >= 4) throw StateError("Final AUF alignment failed.");
-        }
-        
-        return steps.toString().trim().replaceAll(RegExp(r'\s+'), ' ');
-      }
-
-      // Turn top layer to search for the next rotation
-      cube.executeSequence("U");
-      steps.write("U ");
+      return steps.toString().trim().replaceAll(RegExp(r'\s+'), ' ');
     }
 
-    // Rotate the entire cube to check the next spatial angle profile
-    cube.rotateCubeY();
-    steps.write("y ");
+    if (standardPLLAlgorithms.containsKey(signature)) {
+      final algorithm = standardPLLAlgorithms[signature]!;
+      cube.executeSequence(algorithm);
+      steps.write("$algorithm ");
+      seenSignatures.clear();
+      continue;
+    }
+
+    if (seenSignatures.contains(signature)) {
+      cube.rotateCubeY();
+      steps.write("y ");
+      seenSignatures.clear();
+    } else {
+      seenSignatures.add(signature);
+    }
+
+    cube.executeSequence("U");
+    steps.write("U ");
   }
 
-  throw StateError("Cube is in an invalid PLL state or signature is missing from database.");
+  final signature = getPLLSignature(cube);
+  final topFaceIsSolved = isPLLResolved(cube, topColor);
+
+  throw StateError(
+    'PLL could not find a matching case. Signature=$signature, topFaceSolved=$topFaceIsSolved. '
+    'This usually means the cube did not reach a valid PLL state before this phase.',
+  );
 }
 
-String _getPLLSignature(RubiksCube cube) {
+String getPLLSignature(RubiksCube cube) {
   StringBuffer sig = StringBuffer();
 
   Color colorF = cube.getCenterColor(Face.F);
@@ -120,7 +115,6 @@ String _getPLLSignature(RubiksCube cube) {
     return "?";
   }
 
-  // Uniform clockwise reading order matches your exact database layout keys
   final sideFaces = [Face.F, Face.R, Face.B, Face.L];
   for (var face in sideFaces) {
     for (int c = 0; c < 3; c++) {
@@ -129,4 +123,26 @@ String _getPLLSignature(RubiksCube cube) {
   }
 
   return sig.toString();
+}
+
+bool isPLLResolved(RubiksCube cube, Color topColor) {
+  final topFace = cube.grid[Face.U.index];
+  final topLayerSolved = topFace.every((row) => row.every((color) => ColorUtils.areColorsEqual(color, topColor)));
+
+  if (!topLayerSolved) return false;
+
+  final sideCenters = <Face, Color>{
+    Face.F: cube.getCenterColor(Face.F),
+    Face.R: cube.getCenterColor(Face.R),
+    Face.B: cube.getCenterColor(Face.B),
+    Face.L: cube.getCenterColor(Face.L),
+  };
+
+  return sideCenters.entries.every((entry) {
+    final face = entry.key;
+    final expectedCenter = entry.value;
+    return cube.grid[face.index][0][0] == expectedCenter &&
+        cube.grid[face.index][0][1] == expectedCenter &&
+        cube.grid[face.index][0][2] == expectedCenter;
+  });
 }
