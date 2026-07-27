@@ -49,10 +49,10 @@ class _CubeWidgetState extends State<CubeWidget> {
           borderRadius: BorderRadius.circular(12),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
-            end: Alignment(0.8, 1),
+            end: const Alignment(0.8, 1),
             colors: <Color>[
-            Color.fromARGB(58, 90, 175, 194),
-            Color.fromARGB(180, 0, 208, 255),
+              Theme.of(context).colorScheme.primary.withOpacity(0.55),
+              Theme.of(context).colorScheme.secondary.withOpacity(0.95),
             ],
           ),
         ),

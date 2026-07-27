@@ -44,23 +44,23 @@ class _PageManualFillState extends State<PageManualFill> {
   @override
   Widget build(BuildContext context) {
     // TODO: implement build
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text("Manual input"),
-        backgroundColor: Color.fromARGB(117, 0, 210, 210),
+        title: const Text("Manual input"),
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         spacing: 16,
         children: [
           Container(
-            color: Colors.red,
+            color: theme.colorScheme.primary,
             width: 32,
             height: 32,
           ),
-          const Divider(
-            color: Colors.black87,
-            thickness: 15,
+          Divider(
+            color: theme.colorScheme.outlineVariant,
+            thickness: 2,
           ),
           RubiksFace(
             selectedColor: _selectedColor, 
@@ -98,8 +98,8 @@ class _PageManualFillState extends State<PageManualFill> {
               icon: const Icon(Icons.check_circle_outline),
               label: const Text("Solve"),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                foregroundColor: Colors.white,
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: theme.colorScheme.onPrimary,
               ),
             ),
           ],
@@ -346,10 +346,10 @@ class StateRubikGridView extends State<RubiksGridView>{
                 onTap: () => _paintCell(row, col),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: widget.allFaces[widget.selectedFace][row][col] ?? Colors.grey, //none,
+                    color: widget.allFaces[widget.selectedFace][row][col] ?? Theme.of(context).colorScheme.surfaceContainerHighest,
                     shape: BoxShape.rectangle,
                     borderRadius: BorderRadius.circular(2),
-                    border: Border.all(color: Colors.black),
+                    border: Border.all(color: Theme.of(context).colorScheme.outline),
                   ),
                 ),
               ),
@@ -391,8 +391,8 @@ class StateRubikFaceSelector extends State<RubikFaceSelector> {
                 _currentFace = index,
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: isActive ? Colors.teal : Colors.grey[300],
-                foregroundColor: isActive ? Colors.white : Colors.black87,
+                backgroundColor: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.surfaceContainerHighest,
+                foregroundColor: isActive ? Theme.of(context).colorScheme.onPrimary : Theme.of(context).colorScheme.onSurface,
                 padding: EdgeInsets.zero,
                 elevation: isActive ? 4 : 1,
                 shape: RoundedRectangleBorder(

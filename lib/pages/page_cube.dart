@@ -13,9 +13,7 @@ class PageCube extends StatelessWidget {
   Widget build(BuildContext context) {
     return  Scaffold(
       appBar: AppBar(
-        title: Text(
-          title
-        ),
+        title: Text(title),
       ),
       body: Center(
         child: Column(
@@ -25,7 +23,10 @@ class PageCube extends StatelessWidget {
             Container(
               width: 400,
               height: 400,
-              color: Color.fromARGB(230, 252, 0, 0),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(16),
+              ),
               /* margin: EdgeInsetsGeometry.directional(
                 bottom: 24
               ), */

@@ -546,28 +546,24 @@ String solveCfop(List<List<List<Color>>> cubeFaces) {
     String crossSteps = solveBottomCross(cube);
     completeSolution.write("$crossSteps ");
   }
-  print("Bottom cross :  $completeSolution \n");
 
   // 2. F2L Phase
   if (!cube.checkF2L()) {
     String f2lSteps = solveF2L(cube);
     completeSolution.write("$f2lSteps ");
   }
-  print("F2L :  $completeSolution \n");
 
   // 3. OLL Phase
   if (!cube.checkOLL()) {
     String ollSteps = solveOLL(cube);
     completeSolution.write("$ollSteps ");
   }
-  print("OLL :  $completeSolution \n");
-
+  
   // 4. PLL Phase
   if (!cube.checkPLL()) {
     String pllSteps = solvePLL(cube);
     completeSolution.write(pllSteps);
   }
-  print("PLL :  $completeSolution \n");
 
   String rawSolution = completeSolution.toString();
 

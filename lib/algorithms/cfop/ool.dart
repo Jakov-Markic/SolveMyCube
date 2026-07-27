@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:solve_my_cube/algorithms/cfop/f2l.dart';
 import '../../color_utils.dart';
 import 'cfop.dart';
 
