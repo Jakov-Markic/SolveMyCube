@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'bottom_cross.dart';
 import 'f2l.dart';
-import 'ool.dart';
+import 'oll.dart';
 import 'pll.dart';
 import '../rubik_cube.dart';
 
@@ -75,6 +75,8 @@ String solveCfop(List<List<List<Color>>> cubeFaces) {
     String f2lSteps = solveF2L(cube);
     completeSolution.write("$f2lSteps ");
   }
+
+  print("\n\n$completeSolution\n\n");
 
   // 3. OLL Phase
   if (!cube.checkOLL()) {

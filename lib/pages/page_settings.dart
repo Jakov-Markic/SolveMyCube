@@ -24,7 +24,7 @@ class PageSettings extends StatefulWidget {
 
 class _PageSettingsState extends State<PageSettings> {
   final List<String> _fontFamilies = ['Roboto', 'Courier', 'Times New Roman', 'sans-serif'];
-  final List<String> _algorithms = ['CFOP', 'Kociemba'];
+  final List<String> _algorithms = ['CFOP', 'Kociemba', 'Thistlethwaite'];
 
   @override
   Widget build(BuildContext context) {

@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../color_utils.dart';
-import '../rubik_cube.dart';
+import 'cfop.dart';
 
 // --- 1. BOTTOM CROSS SOLVER ---
-
 String solveBottomCross(RubiksCube cube) {
   StringBuffer steps = StringBuffer();
 
-  // Solve all 4 cross edges sequentially by rotating the cube horizontally each time
   for (int i = 0; i < 4; i++) {
     Color cD = cube.getCenterColor(Face.D);
     Color cF = cube.getCenterColor(Face.F);

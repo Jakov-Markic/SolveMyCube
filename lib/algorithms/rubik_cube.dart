@@ -11,9 +11,9 @@ enum Move {
   L, LPrime, L2, l, lPrime, l2,
   D, DPrime, D2, d, dPrime, d2,
   M, MPrime, M2,
-  x, xPrime,
-  y, yPrime,
-  z, zPrime
+  x, xPrime, x2,
+  y, yPrime, y2,
+  z, zPrime, z2
 }
 
 class RubiksCube {
@@ -95,10 +95,13 @@ class RubiksCube {
 
       case 'x': return Move.x;
       case "x'": return Move.xPrime;
+      case "x2": return Move.x2;
       case 'y': return Move.y;
       case "y'": return Move.yPrime;
+      case "y2": return Move.y2;
       case 'z': return Move.z;
       case "z'": return Move.zPrime;
+      case "z2": return Move.z2;
 
       default: return null;
     }
@@ -121,12 +124,12 @@ class RubiksCube {
         break;
 
       case Move.u:
-        applyMove(Move.DPrime);
+        applyMove(Move.D);
         rotateCubeY();
         break;
       case Move.uPrime:
-        applyMove(Move.D);
-        _rotateCubeYPrime();
+        applyMove(Move.DPrime);
+        rotateCubeYPrime();
         break;
       case Move.u2:
         applyMove(Move.u);
@@ -134,18 +137,18 @@ class RubiksCube {
         break;
 
       case Move.D:
-        _rotateCubeX();
-        _rotateCubeX();
+        rotateCubeX();
+        rotateCubeX();
         applyMove(Move.U);
-        _rotateCubeX();
-        _rotateCubeX();
+        rotateCubeX();
+        rotateCubeX();
         break;
       case Move.DPrime:
-        _rotateCubeX();
-        _rotateCubeX();
+        rotateCubeX();
+        rotateCubeX();
         applyMove(Move.UPrime);
-        _rotateCubeX();
-        _rotateCubeX();
+        rotateCubeX();
+        rotateCubeX();
         break;
       case Move.D2:
         applyMove(Move.D);
@@ -154,7 +157,7 @@ class RubiksCube {
 
       case Move.d:
         applyMove(Move.U);
-        _rotateCubeYPrime();
+      rotateCubeYPrime();
         break;
       case Move.dPrime:
         applyMove(Move.UPrime);
@@ -166,14 +169,14 @@ class RubiksCube {
         break;
 
       case Move.R:
-        _rotateCubeZPrime();
+        rotateCubeZPrime();
         applyMove(Move.U);
-        _rotateCubeZ();
+        rotateCubeZ();
         break;
       case Move.RPrime:
-        _rotateCubeZPrime();
+        rotateCubeZPrime();
         applyMove(Move.UPrime);
-        _rotateCubeZ();
+        rotateCubeZ();
         break;
       case Move.R2:
         applyMove(Move.R);
@@ -181,12 +184,12 @@ class RubiksCube {
         break;
 
       case Move.r:
-        applyMove(Move.LPrime);
-        _rotateCubeX();
+        applyMove(Move.L);
+        rotateCubeX();
         break;
       case Move.rPrime:
-        applyMove(Move.L);
-        _rotateCubeXPrime();
+        applyMove(Move.LPrime);
+        rotateCubeXPrime();
         break;
       case Move.r2:
         applyMove(Move.r);
@@ -194,14 +197,14 @@ class RubiksCube {
         break;
 
       case Move.L:
-        _rotateCubeZ();
+        rotateCubeZ();
         applyMove(Move.U);
-        _rotateCubeZPrime();
+        rotateCubeZPrime();
         break;
       case Move.LPrime:
-        _rotateCubeZ();
+        rotateCubeZ();
         applyMove(Move.UPrime);
-        _rotateCubeZPrime();
+        rotateCubeZPrime();
         break;
       case Move.L2:
         applyMove(Move.L);
@@ -209,12 +212,12 @@ class RubiksCube {
         break;
 
       case Move.l:
-        applyMove(Move.RPrime);
-        _rotateCubeXPrime();
+        applyMove(Move.R);
+        rotateCubeXPrime();
         break;
       case Move.lPrime:
-        applyMove(Move.R);
-        _rotateCubeX();
+        applyMove(Move.RPrime);
+        rotateCubeX();
         break;
       case Move.l2:
         applyMove(Move.l);
@@ -222,14 +225,14 @@ class RubiksCube {
         break;
 
       case Move.F:
-        _rotateCubeX();
+        rotateCubeX();
         applyMove(Move.U);
-        _rotateCubeXPrime();
+        rotateCubeXPrime();
         break;
       case Move.FPrime:
-        _rotateCubeX();
+        rotateCubeX();
         applyMove(Move.UPrime);
-        _rotateCubeXPrime();
+        rotateCubeXPrime();
         break;
       case Move.F2:
         applyMove(Move.F);
@@ -237,12 +240,12 @@ class RubiksCube {
         break;
 
       case Move.f:
-        applyMove(Move.BPrime);
-        _rotateCubeZ();
+        applyMove(Move.B);
+        rotateCubeZ();
         break;
       case Move.fPrime:
-        applyMove(Move.B);
-        _rotateCubeZPrime();
+        applyMove(Move.BPrime);
+        rotateCubeZPrime();
         break;
       case Move.f2:
         applyMove(Move.f);
@@ -250,14 +253,14 @@ class RubiksCube {
         break;
 
       case Move.B:
-        _rotateCubeXPrime();
+        rotateCubeXPrime();
         applyMove(Move.U);
-        _rotateCubeX();
+        rotateCubeX();
         break;
       case Move.BPrime:
-        _rotateCubeXPrime();
+        rotateCubeXPrime();
         applyMove(Move.UPrime);
-        _rotateCubeX();
+        rotateCubeX();
         break;
       case Move.B2:
         applyMove(Move.B);
@@ -266,11 +269,11 @@ class RubiksCube {
 
       case Move.b:
         applyMove(Move.FPrime);
-        _rotateCubeZPrime();
+        rotateCubeZPrime();
         break;
       case Move.bPrime:
         applyMove(Move.F);
-        _rotateCubeZ();
+        rotateCubeZ();
         break;
       case Move.b2:
         applyMove(Move.b);
@@ -278,14 +281,14 @@ class RubiksCube {
         break;
 
       case Move.M:
-        applyMove(Move.L);
-        applyMove(Move.RPrime);
-        _rotateCubeXPrime();
-        break;
-      case Move.MPrime:
         applyMove(Move.LPrime);
         applyMove(Move.R);
-        _rotateCubeX();
+        rotateCubeXPrime();
+        break;
+      case Move.MPrime:
+        applyMove(Move.L);
+        applyMove(Move.RPrime);
+        rotateCubeX();
         break;
       case Move.M2:
         applyMove(Move.M);
@@ -293,22 +296,34 @@ class RubiksCube {
         break;
 
       case Move.x:
-        _rotateCubeX();
+        rotateCubeX();
         break;
       case Move.xPrime:
-        _rotateCubeXPrime();
+        rotateCubeXPrime();
+        break;
+      case Move.x2:
+        rotateCubeX();
+        rotateCubeX();
         break;
       case Move.y:
-        rotateCubeY();
+      rotateCubeY();
         break;
       case Move.yPrime:
-        _rotateCubeYPrime();
+        rotateCubeYPrime();
+        break;
+      case Move.y2:
+      rotateCubeY();
+      rotateCubeY();
         break;
       case Move.z:
-        _rotateCubeZ();
+        rotateCubeZ();
         break;
       case Move.zPrime:
-        _rotateCubeZPrime();
+        rotateCubeZPrime();
+        break;
+      case Move.z2:
+        rotateCubeZ();
+        rotateCubeZ();
         break;
 
       default:
@@ -375,7 +390,7 @@ class RubiksCube {
   }
 
   /// Rotates the entire cube along the X-axis (Rolls forward, Front goes Up).
-  void _rotateCubeX() {
+  void rotateCubeX() {
     var oldF = _getClonedFace(Face.F);
     var oldR = _getClonedFace(Face.R);
     var oldU = _getClonedFace(Face.U);
@@ -393,7 +408,7 @@ class RubiksCube {
   }
 
   /// Rotates the entire cube along the X-axis in reverse (Rolls backward, Front goes Down).
-  void _rotateCubeXPrime() {
+  void rotateCubeXPrime() {
     var oldF = _getClonedFace(Face.F);
     var oldR = _getClonedFace(Face.R);
     var oldU = _getClonedFace(Face.U);
@@ -426,7 +441,7 @@ class RubiksCube {
     grid[Face.L.index] = oldF;
   }
 
-  void _rotateCubeYPrime() {
+  void rotateCubeYPrime() {
     _rotateFaceCounterClockwise(Face.U);
     _rotateFaceClockwise(Face.D);
 
@@ -442,7 +457,7 @@ class RubiksCube {
   }
 
   /// Rotates the entire cube along the Z-axis (Tilts right, Up goes Right).
-  void _rotateCubeZ() {
+  void rotateCubeZ() {
     var oldF = _getClonedFace(Face.F);
     var oldR = _getClonedFace(Face.R);
     var oldU = _getClonedFace(Face.U);
@@ -460,7 +475,7 @@ class RubiksCube {
   }
 
   /// Rotates the entire cube along the Z-axis in reverse (Tilts left, Up goes Left).
-  void _rotateCubeZPrime() {
+  void rotateCubeZPrime() {
     var oldF = _getClonedFace(Face.F);
     var oldR = _getClonedFace(Face.R);
     var oldU = _getClonedFace(Face.U);
