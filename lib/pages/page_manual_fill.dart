@@ -11,7 +11,9 @@ const defaultColorValue = [
 ];
 
 class PageManualFill extends StatefulWidget{
-  const PageManualFill({super.key});
+  final List<List<List<Color?>>>? initialCubeFaces;
+
+  const PageManualFill({super.key, this.initialCubeFaces});
 
   @override
   State<StatefulWidget> createState() => _PageManualFillState();
@@ -22,23 +24,58 @@ class _PageManualFillState extends State<PageManualFill> {
   Color _selectedColor = defaultColorValue[0];
   bool _isComplete = false;
 
-  final List<List<List<Color?>>> _allFaces = 
-    List.generate(6, (_) => 
-      List.generate(3, (_) =>
-        List.generate(3, (_) => null,
-      )
-    )
-  );
+  late final List<List<List<Color?>>> _allFaces;
+  late final ValueNotifier<List<int>> _cellsRemainingNotifier;
 
-  List<int> numberOfCellsRemaining = List.filled(6, 9);
+  @override
+  void initState() {
+    super.initState();
+    _allFaces = _createFaces(widget.initialCubeFaces);
+    _cellsRemainingNotifier = ValueNotifier(_initialRemainingCounts(_allFaces));
+  }
 
-  final ValueNotifier<List<int>> _cellsRemainingNotifier = 
-    ValueNotifier(List.filled(6, 9));
-  
   @override
   void dispose() {
     _cellsRemainingNotifier.dispose();
     super.dispose();
+  }
+
+  List<List<List<Color?>>> _createFaces(List<List<List<Color?>>>? initialFaces) {
+    final faces = List<List<List<Color?>>>.generate(
+      6,
+      (_) => List<List<Color?>>.generate(3, (_) => List<Color?>.filled(3, null)),
+    );
+
+    if (initialFaces == null) {
+      return faces;
+    }
+
+    for (int faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+      for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 3; col++) {
+          faces[faceIndex][row][col] = initialFaces[faceIndex][row][col];
+        }
+      }
+    }
+
+    return faces;
+  }
+
+  List<int> _initialRemainingCounts(List<List<List<Color?>>> faces) {
+    final counts = List<int>.filled(6, 9);
+    for (int faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+      for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 3; col++) {
+          final color = faces[faceIndex][row][col];
+          if (color == null) continue;
+          final index = defaultColorValue.indexOf(color);
+          if (index >= 0) {
+            counts[index] = (counts[index] - 1).clamp(0, 9);
+          }
+        }
+      }
+    }
+    return counts;
   }
   
   @override
@@ -195,7 +232,7 @@ class ColorPickerTile extends StatelessWidget {
             width: width,
             height: height,
             decoration: BoxDecoration(
-              color: selected ? colorValue.withOpacity(0.5) : colorValue,
+              color: selected ? colorValue.withValues(alpha: 0.5) : colorValue,
               border: Border.all(
                 color: selected ? Colors.white : Colors.black,
                 width: selected ? 3 : 1,
