@@ -1,14 +1,112 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui';
 
-import 'package:flutter/services.dart';
-import 'package:flutter_pytorch/flutter_pytorch.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:image/image.dart' as img;
+import 'package:tflite_flutter/tflite_flutter.dart';
+
+/// Describes how a frame was padded to a square before being handed to the
+/// detector, so keypoints can be mapped back to the original (non-square)
+/// camera frame. All fields are fractions of the square canvas side.
+class LetterboxInfo {
+  final double contentWidthFrac;
+  final double contentHeightFrac;
+  final double padXFrac;
+  final double padYFrac;
+
+  const LetterboxInfo({
+    required this.contentWidthFrac,
+    required this.contentHeightFrac,
+    required this.padXFrac,
+    required this.padYFrac,
+  });
+
+  static const LetterboxInfo identity = LetterboxInfo(
+    contentWidthFrac: 1.0,
+    contentHeightFrac: 1.0,
+    padXFrac: 0.0,
+    padYFrac: 0.0,
+  );
+}
+
+/// A model-ready input tensor (NCHW, float32, 0..1) plus the padding
+/// metadata needed to undo it once keypoints come back from the model.
+class ModelInputTensor {
+  final Float32List tensor;
+  final LetterboxInfo letterbox;
+
+  const ModelInputTensor({required this.tensor, required this.letterbox});
+}
+
+/// Builds a model-ready input tensor from a decoded camera/image frame:
+/// pads [source] to a square canvas (grey fill, matching the training-time
+/// letterbox color), rotates it 90 degrees clockwise to match the upright
+/// orientation the model was trained on (raw camera stream buffers come in
+/// sideways relative to how the phone is held), and packs it into an NCHW
+/// float32 tensor normalized to [0, 1]. Downscales first if needed; never
+/// upscales beyond [inputSize].
+ModelInputTensor buildModelInputTensor(
+  img.Image source, {
+  required int inputSize,
+  int fillGray = 114,
+}) {
+  final sourceLongSide = math.max(source.width, source.height);
+  final scale = sourceLongSide <= inputSize ? 1.0 : inputSize / sourceLongSide;
+
+  final contentWidth = math.max(1, (source.width * scale).round()).clamp(1, inputSize);
+  final contentHeight = math.max(1, (source.height * scale).round()).clamp(1, inputSize);
+
+  final content = (contentWidth == source.width && contentHeight == source.height)
+      ? source
+      : img.copyResize(
+          source,
+          width: contentWidth,
+          height: contentHeight,
+          interpolation: img.Interpolation.linear,
+        );
+
+  final padX = ((inputSize - contentWidth) / 2).floor();
+  final padY = ((inputSize - contentHeight) / 2).floor();
+
+  final canvas = img.Image(width: inputSize, height: inputSize);
+  img.fill(canvas, color: img.ColorRgb8(fillGray, fillGray, fillGray));
+  img.compositeImage(canvas, content, dstX: padX, dstY: padY);
+
+  // Matches the fixed 90-degree clockwise rotation the old native pipeline
+  // used to apply (see RubikDetector._mapModelPointToFrame for the inverse).
+  final rotated = img.copyRotate(canvas, angle: 90);
+
+  final tensor = Float32List(3 * inputSize * inputSize);
+  final planeSize = inputSize * inputSize;
+  var idx = 0;
+  for (var y = 0; y < inputSize; y++) {
+    for (var x = 0; x < inputSize; x++) {
+      final pixel = rotated.getPixel(x, y);
+      tensor[idx] = pixel.r / 255.0;
+      tensor[planeSize + idx] = pixel.g / 255.0;
+      tensor[2 * planeSize + idx] = pixel.b / 255.0;
+      idx++;
+    }
+  }
+
+  return ModelInputTensor(
+    tensor: tensor,
+    letterbox: LetterboxInfo(
+      contentWidthFrac: contentWidth / inputSize,
+      contentHeightFrac: contentHeight / inputSize,
+      padXFrac: padX / inputSize,
+      padYFrac: padY / inputSize,
+    ),
+  );
+}
 
 class DetectionResult {
   final String color;
   final double confidence;
-  final List<double> bbox; // [x, y, width, height]
+  final List<double> bbox; // [x, y, width, height], frame-normalized [0,1]
 
   DetectionResult({
     required this.color,
@@ -17,25 +115,84 @@ class DetectionResult {
   });
 }
 
+class KeypointResult {
+  final int index;
+  final Offset normalized;
+  final double score;
+  final bool visible;
+
+  const KeypointResult({
+    required this.index,
+    required this.normalized,
+    required this.score,
+    required this.visible,
+  });
+}
+
+class CubePoint3 {
+  final double x;
+  final double y;
+  final double z;
+
+  const CubePoint3(this.x, this.y, this.z);
+}
+
+class SolvePnPHookData {
+  final List<CubePoint3> objectPoints;
+  final List<KeypointResult> imageKeypoints;
+
+  const SolvePnPHookData({
+    required this.objectPoints,
+    required this.imageKeypoints,
+  });
+
+  bool get hasEnoughPoints => imageKeypoints.where((p) => p.visible).length >= 4;
+}
+
+class CubePoseResult {
+  final DetectionResult detection;
+  final Rect roiNormalized;
+  final List<KeypointResult> keypoints;
+  final SolvePnPHookData solvePnP;
+  final int stage1InferenceMs;
+  final int stage2InferenceMs;
+  final bool stage2Used;
+  final String stage2Status;
+
+  const CubePoseResult({
+    required this.detection,
+    required this.roiNormalized,
+    required this.keypoints,
+    required this.solvePnP,
+    required this.stage1InferenceMs,
+    required this.stage2InferenceMs,
+    required this.stage2Used,
+    required this.stage2Status,
+  });
+
+  int get visibleKeypointCount => keypoints.where((k) => k.visible).length;
+
+  List<Offset> get visibleKeypointsNormalized => keypoints
+      .where((k) => k.visible)
+      .map((k) => k.normalized)
+      .toList(growable: false);
+
+  List<Offset> get frontFaceQuadNormalized {
+    final front = keypoints.where((k) => k.visible && k.index < 4).toList();
+    front.sort((a, b) => a.index.compareTo(b.index));
+    return front.map((k) => k.normalized).toList(growable: false);
+  }
+}
+
 class DetectorDebugFrame {
-  final int modelDetections;
-  final int rawCandidates;
-  final int strictCandidates;
-  final int fallbackCandidates;
-  final double bestModelScore;
-  final double bestKeptScore;
+  final double confidence;
   final bool wasSlow;
   final int inferenceMs;
   final String activeModel;
   final String? lastError;
 
   const DetectorDebugFrame({
-    this.modelDetections = 0,
-    this.rawCandidates = 0,
-    this.strictCandidates = 0,
-    this.fallbackCandidates = 0,
-    this.bestModelScore = 0.0,
-    this.bestKeptScore = 0.0,
+    this.confidence = 0.0,
     this.wasSlow = false,
     this.inferenceMs = 0,
     this.activeModel = '',
@@ -43,325 +200,54 @@ class DetectorDebugFrame {
   });
 }
 
-class _ParsedDetections {
-  final List<DetectionResult> results;
-  final int rawCandidates;
-  final int strictCandidates;
-  final int fallbackCandidates;
-
-  const _ParsedDetections({
-    required this.results,
-    required this.rawCandidates,
-    required this.strictCandidates,
-    required this.fallbackCandidates,
-  });
-}
-
+/// Single-stage 8-corner cube pose detector, backed by TensorFlow Lite.
+///
+/// Loads one YOLO-pose model (trained by
+/// `rubik_training/train_cube_pose_8pt.py`, exported to TFLite via
+/// `rubik_training/colab_export_tflite.py`) and decodes its raw
+/// (1, 29, numAnchors) output - box(4) + confidence(1) + 8 keypoints(3 each,
+/// x/y/visibility) per anchor - picking the single highest-confidence anchor
+/// (one cube per frame, single class). Runs on the GPU delegate when
+/// available (Android), falling back to CPU (XNNPACK) automatically.
 class RubikDetector {
-  static const String preferredModelPath = 'assets/models/best_tensor.ptl';
-  static const String fallbackModelPath = 'assets/models/best_tensor.torchscript';
-  static const String labelsPath = 'assets/models/cube_labels.txt';
-  static const int inputSize = 640;
-  static const int inferenceTimeoutMs = 1500;
-  static const int slowInferenceMs = 2500;
-  static const int maxConsecutiveSlowFramesBeforeModelSwap = 3;
-  static const double scoreThreshold = 0.08;
-  static const double minAreaRatio = 0.0015;
-  static const double maxAreaRatio = 0.97;
-  static const double minAspectRatio = 0.16;
-  static const double maxAspectRatio = 6.00;
-  static const double maxCenterDistance = 1.35;
-  static const double maxSpanRatio = 0.98;
+  static const String modelPath = 'assets/models/cube_pose_8pt.tflite';
 
-  // Fallback gates are intentionally relaxed to avoid dropping valid cubes.
-  static const double fallbackScoreThreshold = 0.04;
-  static const double fallbackMinAreaRatio = 0.001;
-  static const double fallbackMaxAreaRatio = 0.99;
-  static const double fallbackMinAspectRatio = 0.12;
-  static const double fallbackMaxAspectRatio = 7.00;
-  static const double fallbackMaxCenterDistance = 1.45;
-  static const double fallbackMaxSpanRatio = 0.99;
-  static const int boxesLimit = 6;
-  static const bool pluginRotatesInputClockwise90 = true;
+  // Must match the imgsz the mobile model was exported/traced at
+  // (train_cube_pose_8pt.py's --mobile-imgsz, 320 by default).
+  static const int inputSize = 320;
+  static const int keypointCount = 8;
+  static const int outputChannels = 5 + keypointCount * 3; // box(4)+conf(1)+8*(x,y,vis)
 
-  ClassificationModel? _model;
-  List<String> _labels = const [];
+  static const int inferenceTimeoutMs = 3000;
+  static const int slowInferenceMs = 300;
+
+  static const double minDetectionScore = 0.20;
+  static const double keypointVisibleThreshold = 0.5;
+  static const double minPoseDetectionArea = 0.002;
+  static const double maxPoseDetectionArea = 0.85;
+
+  Interpreter? _interpreter;
+  IsolateInterpreter? _isolateInterpreter;
   bool _modelLoaded = false;
+  bool _usedGpuDelegate = false;
   Future<void>? _loadFuture;
   DetectorDebugFrame _lastDebugFrame = const DetectorDebugFrame(
-    activeModel: preferredModelPath,
+    activeModel: modelPath,
   );
-  int _modelCandidateIndex = 0;
-  int _consecutiveSlowFrames = 0;
+  List<double>? _lastStableBbox;
 
   DetectorDebugFrame get lastDebugFrame => _lastDebugFrame;
 
   String get currentModelAsset =>
-      _modelCandidateIndex == 0 ? preferredModelPath : fallbackModelPath;
+      '$modelPath${_usedGpuDelegate ? ' (gpu)' : ' (cpu)'}';
 
   Future<void> preloadModel() async {
     if (_loadFuture != null) {
       await _loadFuture;
       return;
     }
-
     _loadFuture = _ensureModelLoaded();
     await _loadFuture;
-  }
-
-  Future<List<DetectionResult>> detect(String imagePath) async {
-    final file = File(imagePath);
-    if (!await file.exists()) {
-      throw Exception('Image file not found: $imagePath');
-    }
-
-    return detectFromBytes(await file.readAsBytes());
-  }
-
-  Future<List<DetectionResult>> detectFromBytes(Uint8List imageBytes) async {
-    await preloadModel();
-
-    final inferenceStopwatch = Stopwatch()..start();
-    try {
-      final prediction = await _model!
-          .getImagePredictionList(
-            imageBytes,
-            mean: const [0.0, 0.0, 0.0],
-            std: const [1.0, 1.0, 1.0],
-          )
-          .timeout(const Duration(milliseconds: inferenceTimeoutMs));
-      inferenceStopwatch.stop();
-
-      final inferenceMs = inferenceStopwatch.elapsedMilliseconds;
-      final wasSlow = inferenceMs >= slowInferenceMs;
-      if (wasSlow) {
-        _consecutiveSlowFrames += 1;
-        if (_consecutiveSlowFrames >= maxConsecutiveSlowFramesBeforeModelSwap) {
-          _consecutiveSlowFrames = 0;
-          await _switchModelCandidate();
-        }
-      } else {
-        _consecutiveSlowFrames = 0;
-      }
-
-      final parsed = _parseRawDetections(prediction);
-      var bestModelScore = 0.0;
-      for (final item in parsed.results) {
-        if (item.confidence > bestModelScore) {
-          bestModelScore = item.confidence;
-        }
-      }
-
-      var bestKeptScore = 0.0;
-      for (final item in parsed.results) {
-        if (item.confidence > bestKeptScore) {
-          bestKeptScore = item.confidence;
-        }
-      }
-
-      _lastDebugFrame = DetectorDebugFrame(
-        modelDetections: parsed.rawCandidates,
-        rawCandidates: parsed.rawCandidates,
-        strictCandidates: parsed.strictCandidates,
-        fallbackCandidates: parsed.fallbackCandidates,
-        bestModelScore: bestModelScore,
-        bestKeptScore: bestKeptScore,
-        wasSlow: wasSlow,
-        inferenceMs: inferenceMs,
-        activeModel: currentModelAsset,
-      );
-
-      return parsed.results;
-    } on TimeoutException {
-      inferenceStopwatch.stop();
-      _lastDebugFrame = DetectorDebugFrame(
-        activeModel: currentModelAsset,
-        inferenceMs: inferenceStopwatch.elapsedMilliseconds,
-        lastError:
-            'inference timeout ${inferenceStopwatch.elapsedMilliseconds}ms; plugin likely waiting due model output mismatch (expected Tuple)',
-      );
-      return const <DetectionResult>[];
-    } catch (error) {
-      inferenceStopwatch.stop();
-      _lastDebugFrame = DetectorDebugFrame(
-        activeModel: currentModelAsset,
-        inferenceMs: inferenceStopwatch.elapsedMilliseconds,
-        lastError: error.toString(),
-      );
-      rethrow;
-    }
-  }
-
-  _ParsedDetections _parseRawDetections(List<double?>? prediction) {
-    final strictResults = <DetectionResult>[];
-    final fallbackResults = <DetectionResult>[];
-    final rawCandidates = prediction == null
-        ? <DetectionResult>[]
-        : _decodeRawCandidates(prediction);
-    if (prediction == null) {
-      return const _ParsedDetections(
-        results: <DetectionResult>[],
-        rawCandidates: 0,
-        strictCandidates: 0,
-        fallbackCandidates: 0,
-      );
-    }
-
-    for (final detection in rawCandidates) {
-      final score = detection.confidence.clamp(0.0, 1.0);
-      final label = detection.color;
-
-      var left = detection.bbox[0].clamp(0.0, 1.0);
-      var top = detection.bbox[1].clamp(0.0, 1.0);
-      var width = detection.bbox[2].clamp(0.0, 1.0);
-      var height = detection.bbox[3].clamp(0.0, 1.0);
-
-      if (pluginRotatesInputClockwise90) {
-        final corrected = _undoClockwise90Rotation(
-          left.toDouble(),
-          top.toDouble(),
-          width.toDouble(),
-          height.toDouble(),
-        );
-        left = corrected[0];
-        top = corrected[1];
-        width = corrected[2];
-        height = corrected[3];
-      }
-
-      final right = (left + width).clamp(0.0, 1.0);
-      final bottom = (top + height).clamp(0.0, 1.0);
-
-      if (width <= 0.0 || height <= 0.0) {
-        continue;
-      }
-
-      final area = width * height;
-      final aspect = width / math.max(height, 1e-6);
-      final cx = left + width / 2.0;
-      final cy = top + height / 2.0;
-      final centerDistance = math.sqrt(
-        math.pow(cx - 0.5, 2) + math.pow(cy - 0.5, 2),
-      );
-      final touchesHorizontalEdges = left <= 0.01 && right >= 0.99;
-      final touchesVerticalEdges = top <= 0.01 && bottom >= 0.99;
-
-      if (touchesHorizontalEdges || touchesVerticalEdges) {
-        continue;
-      }
-      final spansTooWide = width >= maxSpanRatio;
-      final spansTooTall = height >= maxSpanRatio;
-      final isClearlyFullscreenFalsePositive =
-          spansTooWide ||
-          spansTooTall ||
-          touchesHorizontalEdges ||
-          touchesVerticalEdges;
-
-      if (isClearlyFullscreenFalsePositive) {
-        continue;
-      }
-
-      final candidate = DetectionResult(
-        color: label,
-        confidence: score.toDouble(),
-        bbox: [
-          left.toDouble(),
-          top.toDouble(),
-          width.toDouble(),
-          height.toDouble(),
-        ],
-      );
-
-      final passesStrict =
-          score >= scoreThreshold &&
-          area >= minAreaRatio &&
-          area <= maxAreaRatio &&
-          aspect >= minAspectRatio &&
-          aspect <= maxAspectRatio &&
-          centerDistance <= maxCenterDistance;
-
-      if (passesStrict) {
-        strictResults.add(candidate);
-        continue;
-      }
-
-      final passesFallback =
-          score >= fallbackScoreThreshold &&
-          area >= fallbackMinAreaRatio &&
-          area <= fallbackMaxAreaRatio &&
-          aspect >= fallbackMinAspectRatio &&
-          aspect <= fallbackMaxAspectRatio &&
-          centerDistance <= fallbackMaxCenterDistance &&
-          width <= fallbackMaxSpanRatio &&
-          height <= fallbackMaxSpanRatio;
-
-      if (passesFallback) {
-        fallbackResults.add(candidate);
-      }
-    }
-
-    strictResults.sort(
-      (a, b) => _candidateRank(b).compareTo(_candidateRank(a)),
-    );
-    if (strictResults.isNotEmpty) {
-      return _ParsedDetections(
-        results: [strictResults.first],
-        rawCandidates: rawCandidates.length,
-        strictCandidates: strictResults.length,
-        fallbackCandidates: fallbackResults.length,
-      );
-    }
-
-    fallbackResults.sort(
-      (a, b) => _candidateRank(b).compareTo(_candidateRank(a)),
-    );
-    if (fallbackResults.isNotEmpty) {
-      return _ParsedDetections(
-        results: [fallbackResults.first],
-        rawCandidates: rawCandidates.length,
-        strictCandidates: strictResults.length,
-        fallbackCandidates: fallbackResults.length,
-      );
-    }
-
-    if (rawCandidates.isNotEmpty) {
-      rawCandidates.sort(
-        (a, b) => _candidateRank(b).compareTo(_candidateRank(a)),
-      );
-      return _ParsedDetections(
-        results: [rawCandidates.first],
-        rawCandidates: rawCandidates.length,
-        strictCandidates: strictResults.length,
-        fallbackCandidates: fallbackResults.length,
-      );
-    }
-
-    return _ParsedDetections(
-      results: const <DetectionResult>[],
-      rawCandidates: rawCandidates.length,
-      strictCandidates: strictResults.length,
-      fallbackCandidates: fallbackResults.length,
-    );
-  }
-
-  double _candidateRank(DetectionResult d) {
-    final width = d.bbox[2];
-    final height = d.bbox[3];
-    final area = width * height;
-    final aspect = width / math.max(height, 1e-6);
-    final cx = d.bbox[0] + width / 2.0;
-    final cy = d.bbox[1] + height / 2.0;
-    final centerDistance = math.sqrt(
-      math.pow(cx - 0.5, 2) + math.pow(cy - 0.5, 2),
-    );
-
-    // Prefer confident, square-ish, mid-sized, center-near candidates.
-    final areaPenalty = (area - 0.18).abs();
-    final aspectPenalty = (aspect - 1.0).abs();
-    return d.confidence -
-        (0.55 * areaPenalty) -
-        (0.25 * aspectPenalty) -
-        (0.20 * centerDistance);
   }
 
   Future<void> _ensureModelLoaded() async {
@@ -369,199 +255,308 @@ class RubikDetector {
       return;
     }
 
-    final model = await _loadModel();
-    final labels = await _loadLabels();
+    Interpreter interpreter;
+    var usedGpu = false;
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        final options = InterpreterOptions()..addDelegate(GpuDelegateV2());
+        interpreter = await Interpreter.fromAsset(modelPath, options: options);
+        usedGpu = true;
+      } catch (_) {
+        // GPU delegate unavailable on this device (or unsupported op graph
+        // fallback failed); retry on CPU (XNNPACK).
+        interpreter = await Interpreter.fromAsset(modelPath);
+      }
+    } else {
+      interpreter = await Interpreter.fromAsset(modelPath);
+    }
 
-    _model = model;
-    _labels = labels;
+    _interpreter = interpreter;
+    _isolateInterpreter = await IsolateInterpreter.create(
+      address: interpreter.address,
+    );
+    _usedGpuDelegate = usedGpu;
     _modelLoaded = true;
   }
 
-  Future<ClassificationModel> _loadModel() async {
-    final candidates = <String>[preferredModelPath, fallbackModelPath];
-    Object? lastError;
+  /// Runs the model on a pre-built input tensor (see [buildModelInputTensor]).
+  /// [letterbox] must describe how the frame was padded to a square.
+  Future<CubePoseResult?> detectCubePoseFromTensor(
+    Float32List inputTensor, {
+    LetterboxInfo letterbox = LetterboxInfo.identity,
+  }) async {
+    await preloadModel();
+    final isolateInterpreter = _isolateInterpreter!;
 
-    for (var attempt = 0; attempt < candidates.length; attempt++) {
-      final candidate =
-          candidates[(_modelCandidateIndex + attempt) % candidates.length];
-      try {
-        return await FlutterPytorch.loadClassificationModel(
-          candidate,
-          inputSize,
-          inputSize,
-          labelPath: labelsPath,
-        );
-      } catch (error) {
-        lastError = error;
+    if (isolateInterpreter.state == IsolateInterpreterState.loading) {
+      // A previous call hasn't actually finished yet. Drop this frame
+      // instead of queuing another inference call on top of it.
+      _lastDebugFrame = DetectorDebugFrame(
+        activeModel: currentModelAsset,
+        lastError: 'busy: previous inference still running',
+      );
+      return null;
+    }
+
+    final numAnchors = _interpreter!.getOutputTensor(0).shape.last;
+    final outputBytes = Uint8List(outputChannels * numAnchors * 4);
+    // Pass raw bytes, not the Float32List itself: Tensor.getInputShapeIfDifferent
+    // only skips its (buggy, for flat typed data) shape-inference for
+    // Uint8List/ByteBuffer. A bare Float32List is a List<double> as far as
+    // that check is concerned, so it gets shape-inferred as 1-D [N] instead
+    // of the model's real [1,3,H,W] and wrongly triggers a tensor resize.
+    final inputBytes = inputTensor.buffer.asUint8List(
+      inputTensor.offsetInBytes,
+      inputTensor.lengthInBytes,
+    );
+
+    final stopwatch = Stopwatch()..start();
+    try {
+      await isolateInterpreter
+          .run(inputBytes, outputBytes)
+          .timeout(const Duration(milliseconds: inferenceTimeoutMs));
+    } catch (error) {
+      stopwatch.stop();
+      _lastDebugFrame = DetectorDebugFrame(
+        activeModel: currentModelAsset,
+        inferenceMs: stopwatch.elapsedMilliseconds,
+        lastError: error.toString(),
+      );
+      return null;
+    }
+    stopwatch.stop();
+
+    final inferenceMs = stopwatch.elapsedMilliseconds;
+    final wasSlow = inferenceMs >= slowInferenceMs;
+    final raw = outputBytes.buffer.asFloat32List(
+      outputBytes.offsetInBytes,
+      outputBytes.length ~/ 4,
+    );
+
+    final decoded = _decodeOutput(raw, numAnchors, letterbox);
+    if (decoded == null) {
+      _lastDebugFrame = DetectorDebugFrame(
+        activeModel: currentModelAsset,
+        inferenceMs: inferenceMs,
+        wasSlow: wasSlow,
+        lastError: 'unexpected model output length: ${raw.length}',
+      );
+      return null;
+    }
+
+    _lastDebugFrame = DetectorDebugFrame(
+      confidence: decoded.detection.confidence,
+      activeModel: currentModelAsset,
+      inferenceMs: inferenceMs,
+      wasSlow: wasSlow,
+    );
+
+    if (!_isPlausibleDetection(decoded.detection)) {
+      _lastStableBbox = null;
+      return null;
+    }
+
+    final stabilizedBbox = _stabilizeBBox(
+      decoded.detection.bbox,
+      decoded.detection.confidence,
+    );
+    final stabilizedDetection = DetectionResult(
+      color: decoded.detection.color,
+      confidence: decoded.detection.confidence,
+      bbox: stabilizedBbox,
+    );
+
+    return CubePoseResult(
+      detection: stabilizedDetection,
+      roiNormalized: Rect.fromLTWH(
+        stabilizedBbox[0],
+        stabilizedBbox[1],
+        stabilizedBbox[2],
+        stabilizedBbox[3],
+      ),
+      keypoints: decoded.keypoints,
+      solvePnP: SolvePnPHookData(
+        objectPoints: _cubeObjectPoints,
+        imageKeypoints: decoded.keypoints,
+      ),
+      stage1InferenceMs: inferenceMs,
+      stage2InferenceMs: 0,
+      stage2Used: true,
+      stage2Status: 'ok',
+    );
+  }
+
+  Future<CubePoseResult?> detectCubePose(String imagePath) async {
+    final file = File(imagePath);
+    if (!await file.exists()) {
+      throw Exception('Image file not found: $imagePath');
+    }
+    final decoded = img.decodeImage(await file.readAsBytes());
+    if (decoded == null) {
+      return null;
+    }
+    final input = buildModelInputTensor(decoded, inputSize: inputSize);
+    return detectCubePoseFromTensor(input.tensor, letterbox: input.letterbox);
+  }
+
+  /// Decodes the raw (channels, numAnchors) model output - box(cx,cy,w,h) +
+  /// sigmoid confidence + 8*(x,y,sigmoid visibility), all already normalized
+  /// to [0,1] - picking the single highest-confidence anchor.
+  _DecodedPose? _decodeOutput(
+    Float32List raw,
+    int numAnchors,
+    LetterboxInfo letterbox,
+  ) {
+    if (numAnchors <= 0 || raw.length != outputChannels * numAnchors) {
+      return null;
+    }
+
+    var bestIdx = 0;
+    var bestConf = raw[4 * numAnchors];
+    for (var a = 1; a < numAnchors; a++) {
+      final c = raw[4 * numAnchors + a];
+      if (c > bestConf) {
+        bestConf = c;
+        bestIdx = a;
       }
     }
 
-    throw Exception('Failed to load Rubik detector model: $lastError');
-  }
+    double channel(int c) => raw[c * numAnchors + bestIdx];
 
-  Future<void> _switchModelCandidate() async {
-    _modelCandidateIndex = (_modelCandidateIndex + 1) % 2;
-    _model = null;
-    _modelLoaded = false;
-    _loadFuture = null;
-    try {
-      await preloadModel();
-    } catch (_) {
-      // Keep current behavior; next frame will retry.
+    final cx = channel(0);
+    final cy = channel(1);
+    final w = channel(2);
+    final h = channel(3);
+    final left = cx - w / 2.0;
+    final top = cy - h / 2.0;
+
+    // Map the four box corners through the rotation/letterbox inverse and
+    // re-derive an axis-aligned box, since the 90-degree rotation swaps axes.
+    final corners = [
+      _mapModelPointToFrame(left, top, letterbox),
+      _mapModelPointToFrame(left + w, top, letterbox),
+      _mapModelPointToFrame(left + w, top + h, letterbox),
+      _mapModelPointToFrame(left, top + h, letterbox),
+    ];
+    final minX = corners.map((p) => p.dx).reduce(math.min);
+    final maxX = corners.map((p) => p.dx).reduce(math.max);
+    final minY = corners.map((p) => p.dy).reduce(math.min);
+    final maxY = corners.map((p) => p.dy).reduce(math.max);
+
+    final detection = DetectionResult(
+      color: 'cube',
+      confidence: bestConf.clamp(0.0, 1.0).toDouble(),
+      bbox: [minX, minY, (maxX - minX), (maxY - minY)],
+    );
+
+    final keypoints = <KeypointResult>[];
+    for (var k = 0; k < keypointCount; k++) {
+      final base = 5 + k * 3;
+      final kx = channel(base);
+      final ky = channel(base + 1);
+      final kv = channel(base + 2).clamp(0.0, 1.0);
+      final mapped = _mapModelPointToFrame(kx, ky, letterbox);
+      keypoints.add(
+        KeypointResult(
+          index: k,
+          normalized: mapped,
+          score: kv.toDouble(),
+          visible: kv >= keypointVisibleThreshold,
+        ),
+      );
     }
+
+    return _DecodedPose(detection: detection, keypoints: keypoints);
   }
 
-  List<DetectionResult> _decodeRawCandidates(List<double?> raw) {
-    final values = raw.map((v) => v ?? 0.0).toList(growable: false);
-    final decodedVariants = <List<DetectionResult>>[
-      _decodeInterleavedXyxyCls(values),
-      _decodeInterleavedXywh(values),
-      _decodeChannelMajorXywh(values),
+  /// Undoes the 90-degree clockwise rotation applied in
+  /// [buildModelInputTensor] (to match the model's training orientation),
+  /// then undoes the letterbox padding, to recover a coordinate normalized
+  /// against the original camera frame.
+  Offset _mapModelPointToFrame(double nx, double ny, LetterboxInfo lb) {
+    final rotatedX = ny;
+    final rotatedY = 1.0 - nx;
+
+    final contentX = rotatedX - lb.padXFrac;
+    final contentY = rotatedY - lb.padYFrac;
+
+    final fx = lb.contentWidthFrac > 1e-6 ? contentX / lb.contentWidthFrac : contentX;
+    final fy = lb.contentHeightFrac > 1e-6 ? contentY / lb.contentHeightFrac : contentY;
+
+    return Offset(fx.clamp(0.0, 1.0), fy.clamp(0.0, 1.0));
+  }
+
+  bool _isPlausibleDetection(DetectionResult detection) {
+    if (detection.confidence < minDetectionScore) {
+      return false;
+    }
+    final w = detection.bbox[2].clamp(0.0, 1.0);
+    final h = detection.bbox[3].clamp(0.0, 1.0);
+    final area = w * h;
+    return area >= minPoseDetectionArea && area <= maxPoseDetectionArea;
+  }
+
+  List<double> _stabilizeBBox(List<double> current, double confidence) {
+    final clean = [
+      current[0].clamp(0.0, 1.0),
+      current[1].clamp(0.0, 1.0),
+      current[2].clamp(0.0, 1.0),
+      current[3].clamp(0.0, 1.0),
     ];
 
-    decodedVariants.sort((a, b) => _decodeQuality(b).compareTo(_decodeQuality(a)));
-    final best = decodedVariants.isNotEmpty ? decodedVariants.first : const <DetectionResult>[];
-
-    best.sort((a, b) => _candidateRank(b).compareTo(_candidateRank(a)));
-    return best.take(200).toList(growable: false);
-  }
-
-  double _decodeQuality(List<DetectionResult> detections) {
-    if (detections.isEmpty) return 0.0;
-    final plausible = detections
-        .where((d) => d.confidence >= 0.01 && d.confidence <= 1.2)
-        .length;
-    var best = 0.0;
-    for (final d in detections) {
-      if (d.confidence > best) best = d.confidence;
-    }
-    return plausible * 10 + best;
-  }
-
-  List<DetectionResult> _decodeInterleavedXyxyCls(List<double> v) {
-    if (v.length % 6 != 0) return const <DetectionResult>[];
-    final out = <DetectionResult>[];
-    for (var i = 0; i + 5 < v.length; i += 6) {
-      final x1 = _norm(v[i]);
-      final y1 = _norm(v[i + 1]);
-      final x2 = _norm(v[i + 2]);
-      final y2 = _norm(v[i + 3]);
-      final score = v[i + 4];
-      final left = math.min(x1, x2);
-      final top = math.min(y1, y2);
-      final width = (x1 - x2).abs();
-      final height = (y1 - y2).abs();
-      if (width <= 0 || height <= 0) continue;
-      out.add(
-        DetectionResult(
-          color: _labels.isNotEmpty ? _labels.first : 'cube',
-          confidence: score,
-          bbox: [left, top, width, height],
-        ),
-      );
-    }
-    return out;
-  }
-
-  List<DetectionResult> _decodeInterleavedXywh(List<double> v) {
-    if (v.length % 5 != 0) return const <DetectionResult>[];
-    final out = <DetectionResult>[];
-    for (var i = 0; i + 4 < v.length; i += 5) {
-      final cx = _norm(v[i]);
-      final cy = _norm(v[i + 1]);
-      final w = _norm(v[i + 2]).abs();
-      final h = _norm(v[i + 3]).abs();
-      final score = v[i + 4];
-      final left = (cx - w / 2.0).clamp(0.0, 1.0);
-      final top = (cy - h / 2.0).clamp(0.0, 1.0);
-      if (w <= 0 || h <= 0) continue;
-      out.add(
-        DetectionResult(
-          color: _labels.isNotEmpty ? _labels.first : 'cube',
-          confidence: score,
-          bbox: [left, top, w.clamp(0.0, 1.0), h.clamp(0.0, 1.0)],
-        ),
-      );
-    }
-    return out;
-  }
-
-  List<DetectionResult> _decodeChannelMajorXywh(List<double> v) {
-    if (v.length % 5 != 0) return const <DetectionResult>[];
-    final n = v.length ~/ 5;
-    final out = <DetectionResult>[];
-    for (var i = 0; i < n; i++) {
-      final cx = _norm(v[i]);
-      final cy = _norm(v[n + i]);
-      final w = _norm(v[(2 * n) + i]).abs();
-      final h = _norm(v[(3 * n) + i]).abs();
-      final score = v[(4 * n) + i];
-      final left = (cx - w / 2.0).clamp(0.0, 1.0);
-      final top = (cy - h / 2.0).clamp(0.0, 1.0);
-      if (w <= 0 || h <= 0) continue;
-      out.add(
-        DetectionResult(
-          color: _labels.isNotEmpty ? _labels.first : 'cube',
-          confidence: score,
-          bbox: [left, top, w.clamp(0.0, 1.0), h.clamp(0.0, 1.0)],
-        ),
-      );
-    }
-    return out;
-  }
-
-  double _norm(double value) {
-    if (!value.isFinite) return 0.0;
-    if (value > 1.5 || value < -0.5) {
-      return (value / inputSize).clamp(0.0, 1.0);
-    }
-    return value.clamp(0.0, 1.0);
-  }
-
-  List<double> _undoClockwise90Rotation(
-    double left,
-    double top,
-    double width,
-    double height,
-  ) {
-    final x1 = left;
-    final y1 = top;
-    final x2 = (left + width).clamp(0.0, 1.0);
-    final y2 = (top + height).clamp(0.0, 1.0);
-
-    Offset inv(double x, double y) {
-      // Inverse of plugin's CW90 rotation: rot(x,y) -> orig(y, 1 - x)
-      return Offset(y.clamp(0.0, 1.0), (1.0 - x).clamp(0.0, 1.0));
+    final prev = _lastStableBbox;
+    if (prev == null) {
+      _lastStableBbox = clean;
+      return clean;
     }
 
-    final p1 = inv(x1, y1);
-    final p2 = inv(x2, y1);
-    final p3 = inv(x2, y2);
-    final p4 = inv(x1, y2);
+    final curArea = math.max(1e-6, clean[2] * clean[3]);
+    final prevArea = math.max(1e-6, prev[2] * prev[3]);
+    final areaRatio = curArea / prevArea;
+    final curCx = clean[0] + clean[2] * 0.5;
+    final curCy = clean[1] + clean[3] * 0.5;
+    final prevCx = prev[0] + prev[2] * 0.5;
+    final prevCy = prev[1] + prev[3] * 0.5;
+    final centerDist = math.sqrt(
+      math.pow(curCx - prevCx, 2) + math.pow(curCy - prevCy, 2),
+    );
 
-    final minX = math.min(math.min(p1.dx, p2.dx), math.min(p3.dx, p4.dx));
-    final maxX = math.max(math.max(p1.dx, p2.dx), math.max(p3.dx, p4.dx));
-    final minY = math.min(math.min(p1.dy, p2.dy), math.min(p3.dy, p4.dy));
-    final maxY = math.max(math.max(p1.dy, p2.dy), math.max(p3.dy, p4.dy));
-
-    return [
-      minX.clamp(0.0, 1.0),
-      minY.clamp(0.0, 1.0),
-      (maxX - minX).clamp(0.0, 1.0),
-      (maxY - minY).clamp(0.0, 1.0),
-    ];
-  }
-
-  Future<List<String>> _loadLabels() async {
-    try {
-      final raw = await rootBundle.loadString(labelsPath);
-      return raw
-          .split(RegExp(r'[\r\n]+'))
-          .where((line) => line.trim().isNotEmpty)
-          .map((line) => line.trim())
-          .toList();
-    } catch (_) {
-      return const ['cube'];
+    final abruptScaleJump = areaRatio > 2.4 || areaRatio < 0.42;
+    final abruptCenterJump = centerDist > 0.28;
+    if ((abruptScaleJump || abruptCenterJump) && confidence < 0.45) {
+      return prev;
     }
+
+    final alpha = confidence >= 0.6 ? 0.28 : 0.18;
+    final smoothed = <double>[];
+    for (var i = 0; i < 4; i++) {
+      smoothed.add(prev[i] * (1.0 - alpha) + clean[i] * alpha);
+    }
+
+    smoothed[2] = smoothed[2].clamp(0.02, 0.95);
+    smoothed[3] = smoothed[3].clamp(0.02, 0.95);
+    smoothed[0] = smoothed[0].clamp(0.0, 1.0 - smoothed[2]);
+    smoothed[1] = smoothed[1].clamp(0.0, 1.0 - smoothed[3]);
+
+    _lastStableBbox = smoothed;
+    return smoothed;
   }
+
+  static const List<CubePoint3> _cubeObjectPoints = <CubePoint3>[
+    CubePoint3(-0.5, -0.5, 0.5),
+    CubePoint3(0.5, -0.5, 0.5),
+    CubePoint3(0.5, 0.5, 0.5),
+    CubePoint3(-0.5, 0.5, 0.5),
+    CubePoint3(-0.5, -0.5, -0.5),
+    CubePoint3(0.5, -0.5, -0.5),
+    CubePoint3(0.5, 0.5, -0.5),
+    CubePoint3(-0.5, 0.5, -0.5),
+  ];
+}
+
+class _DecodedPose {
+  final DetectionResult detection;
+  final List<KeypointResult> keypoints;
+
+  const _DecodedPose({required this.detection, required this.keypoints});
 }

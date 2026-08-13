@@ -4,29 +4,129 @@ import 'package:flutter/material.dart';
 
 import 'detector_service.dart';
 
+/// One of the 8 detected cube corners, in pixel space, ready for drawing.
+class CubeVertex {
+  final int index;
+  final Offset position;
+  final bool visible;
+  final double score;
+
+  const CubeVertex({
+    required this.index,
+    required this.position,
+    required this.visible,
+    required this.score,
+  });
+}
+
 class CubeGeometryResult {
   final List<Offset> outline;
   final List<Offset> samplePoints;
   final Rect? bounds;
 
+  /// All 8 corners (front TL,TR,BR,BL then back TL,TR,BR,BL - same order as
+  /// RubikDetector's keypoints/object points), empty when not pose-derived.
+  final List<CubeVertex> cubeVertices;
+
   const CubeGeometryResult({
     required this.outline,
     required this.samplePoints,
     required this.bounds,
+    this.cubeVertices = const <CubeVertex>[],
   });
 
   bool get hasOutline => outline.length >= 4;
+
+  /// Edges of a cube wireframe, indices into [cubeVertices]: front face,
+  /// back face, then the 4 edges connecting front to back corners.
+  static const List<List<int>> wireframeEdges = [
+    [0, 1], [1, 2], [2, 3], [3, 0],
+    [4, 5], [5, 6], [6, 7], [7, 4],
+    [0, 4], [1, 5], [2, 6], [3, 7],
+  ];
 
   String get summary {
     final boundsText = bounds == null
         ? 'no bounds'
         : 'bounds=${bounds!.left.toStringAsFixed(0)},${bounds!.top.toStringAsFixed(0)} '
               '${bounds!.width.toStringAsFixed(0)}x${bounds!.height.toStringAsFixed(0)}';
-    return 'outline=${outline.length} samplePoints=${samplePoints.length} $boundsText';
+    final visibleVertices = cubeVertices.where((v) => v.visible).length;
+    return 'outline=${outline.length} samplePoints=${samplePoints.length} '
+        'corners=$visibleVertices/8 $boundsText';
   }
 }
 
 class CubeGeometry {
+  static CubeGeometryResult fromPoseResult(
+    CubePoseResult pose, {
+    Size? imageSize,
+    int gridSize = 3,
+  }) {
+    final scaleX = imageSize?.width ?? 1.0;
+    final scaleY = imageSize?.height ?? 1.0;
+
+    List<Offset> toPixel(List<Offset> normalized) {
+      return normalized
+          .map((p) => Offset(p.dx * scaleX, p.dy * scaleY))
+          .toList(growable: false);
+    }
+
+    final visible = pose.visibleKeypointsNormalized;
+    final roiOutline = _rectToOutline(
+      Rect.fromLTWH(
+        pose.roiNormalized.left * scaleX,
+        pose.roiNormalized.top * scaleY,
+        pose.roiNormalized.width * scaleX,
+        pose.roiNormalized.height * scaleY,
+      ),
+    );
+
+    List<Offset> outline;
+    if (pose.frontFaceQuadNormalized.length >= 4) {
+      outline = toPixel(pose.frontFaceQuadNormalized.take(4).toList());
+    } else if (visible.length >= 4) {
+      outline = _axisAlignedRectangle(toPixel(visible));
+    } else {
+      outline = roiOutline;
+    }
+
+    final area = _polygonAreaAbs(outline);
+    if (outline.length < 4 || area < 20.0) {
+      outline = roiOutline;
+    }
+
+    final samplePoints = outline.length == 4
+        ? _buildGridPoints(outline, gridSize)
+        : const <Offset>[];
+
+    final bounds = pose.roiNormalized.isEmpty
+        ? null
+        : Rect.fromLTWH(
+            pose.roiNormalized.left * scaleX,
+            pose.roiNormalized.top * scaleY,
+            pose.roiNormalized.width * scaleX,
+            pose.roiNormalized.height * scaleY,
+          );
+
+    final cubeVertices = pose.keypoints
+        .map(
+          (k) => CubeVertex(
+            index: k.index,
+            position: Offset(k.normalized.dx * scaleX, k.normalized.dy * scaleY),
+            visible: k.visible,
+            score: k.score,
+          ),
+        )
+        .toList(growable: false);
+
+    return CubeGeometryResult(
+      outline: outline,
+      samplePoints: samplePoints,
+      bounds: bounds,
+      cubeVertices: cubeVertices,
+    );
+  }
+
   static CubeGeometryResult fromDetections(
     List<DetectionResult> detections, {
     Size? imageSize,
@@ -189,6 +289,26 @@ class CubeGeometry {
       Offset(bounds.right, bounds.bottom),
       Offset(bounds.left, bounds.bottom),
     ];
+  }
+
+  static List<Offset> _rectToOutline(Rect rect) {
+    return [
+      Offset(rect.left, rect.top),
+      Offset(rect.right, rect.top),
+      Offset(rect.right, rect.bottom),
+      Offset(rect.left, rect.bottom),
+    ];
+  }
+
+  static double _polygonAreaAbs(List<Offset> poly) {
+    if (poly.length < 3) return 0.0;
+    var sum = 0.0;
+    for (var i = 0; i < poly.length; i++) {
+      final a = poly[i];
+      final b = poly[(i + 1) % poly.length];
+      sum += (a.dx * b.dy) - (b.dx * a.dy);
+    }
+    return sum.abs() * 0.5;
   }
 
   static List<Offset> _buildGridPoints(List<Offset> quad, int gridSize) {
@@ -357,11 +477,6 @@ class CubeGeometryPainter extends CustomPainter {
       );
     }
 
-    final stroke = Paint()
-      ..color = Colors.limeAccent.withValues(alpha: 0.95)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 5;
-
     final fill = Paint()
       ..color = Colors.limeAccent.withValues(alpha: 0.18)
       ..style = PaintingStyle.fill;
@@ -376,41 +491,8 @@ class CubeGeometryPainter extends CustomPainter {
     path.close();
 
     canvas.drawPath(path, fill);
-    canvas.drawPath(path, stroke);
 
-    final rawBoxPaint = Paint()
-      ..color = Colors.deepOrangeAccent.withValues(alpha: 0.95)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    final rawPointPaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-
-    for (final detection in detections) {
-      if (detection.bbox.length < 4) continue;
-      final left = detection.bbox[0];
-      final top = detection.bbox[1];
-      final width = detection.bbox[2];
-      final height = detection.bbox[3];
-      final topLeft = mapPoint(Offset(left, top));
-      final topRight = mapPoint(Offset(left + width, top));
-      final bottomRight = mapPoint(Offset(left + width, top + height));
-      final bottomLeft = mapPoint(Offset(left, top + height));
-
-      final boxPath = Path()
-        ..moveTo(topLeft.dx, topLeft.dy)
-        ..lineTo(topRight.dx, topRight.dy)
-        ..lineTo(bottomRight.dx, bottomRight.dy)
-        ..lineTo(bottomLeft.dx, bottomLeft.dy)
-        ..close();
-      canvas.drawPath(boxPath, rawBoxPaint);
-      canvas.drawCircle(
-        mapPoint(Offset(left + width / 2, top + height / 2)),
-        3,
-        rawPointPaint,
-      );
-    }
+    _paintCubeWireframe(canvas, mapPoint);
 
     final pointPaint = Paint()
       ..color = Colors.amberAccent
@@ -440,10 +522,123 @@ class CubeGeometryPainter extends CustomPainter {
     }
   }
 
+  /// Draws all 8 detected corners and the 12 edges between them, like a
+  /// wireframe cube sketched on paper: solid bright edges for the front
+  /// face, dashed cool-toned edges for the back face and the corners
+  /// connecting front to back. Only draws an edge when both its corners are
+  /// visible, and only draws a corner dot when that corner itself is
+  /// visible - a partially-occluded cube still draws whatever is known.
+  void _paintCubeWireframe(Canvas canvas, Offset Function(Offset) mapPoint) {
+    final vertices = geometry.cubeVertices;
+    if (vertices.length < 8) {
+      return;
+    }
+
+    const frontColor = Colors.limeAccent;
+    const backColor = Colors.cyanAccent;
+    const connectorColor = Colors.white;
+
+    final frontEdgePaint = Paint()
+      ..color = frontColor.withValues(alpha: 0.95)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+    final backEdgePaint = Paint()
+      ..color = backColor.withValues(alpha: 0.85)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    final connectorEdgePaint = Paint()
+      ..color = connectorColor.withValues(alpha: 0.75)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+
+    for (final edge in CubeGeometryResult.wireframeEdges) {
+      final a = vertices[edge[0]];
+      final b = vertices[edge[1]];
+      if (!a.visible || !b.visible) {
+        continue;
+      }
+
+      final isFrontEdge = edge[0] < 4 && edge[1] < 4;
+      final isBackEdge = edge[0] >= 4 && edge[1] >= 4;
+      final paint = isFrontEdge
+          ? frontEdgePaint
+          : (isBackEdge ? backEdgePaint : connectorEdgePaint);
+      final from = mapPoint(a.position);
+      final to = mapPoint(b.position);
+
+      if (isFrontEdge) {
+        canvas.drawLine(from, to, paint);
+      } else {
+        _drawDashedLine(canvas, from, to, paint);
+      }
+    }
+
+    for (final vertex in vertices) {
+      if (!vertex.visible) {
+        continue;
+      }
+      final isFront = vertex.index < 4;
+      final center = mapPoint(vertex.position);
+      final dotColor = isFront ? frontColor : backColor;
+
+      canvas.drawCircle(
+        center,
+        7,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.55)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawCircle(
+        center,
+        5,
+        Paint()
+          ..color = dotColor.withValues(alpha: 0.4 + 0.6 * vertex.score.clamp(0.0, 1.0))
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawCircle(
+        center,
+        5,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.6)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
+      );
+    }
+  }
+
+  void _drawDashedLine(
+    Canvas canvas,
+    Offset from,
+    Offset to,
+    Paint paint, {
+    double dashLength = 8,
+    double gapLength = 6,
+  }) {
+    final total = (to - from).distance;
+    if (total <= 0) {
+      return;
+    }
+    final direction = (to - from) / total;
+    var covered = 0.0;
+    while (covered < total) {
+      final segmentEnd = math.min(covered + dashLength, total);
+      canvas.drawLine(
+        from + direction * covered,
+        from + direction * segmentEnd,
+        paint,
+      );
+      covered += dashLength + gapLength;
+    }
+  }
+
   @override
   bool shouldRepaint(covariant CubeGeometryPainter oldDelegate) {
     return oldDelegate.geometry.outline != geometry.outline ||
         oldDelegate.geometry.samplePoints != geometry.samplePoints ||
+        oldDelegate.geometry.cubeVertices != geometry.cubeVertices ||
         oldDelegate.sourceSize != sourceSize ||
         oldDelegate.rotationQuarterTurns != rotationQuarterTurns ||
         oldDelegate.detections != detections;

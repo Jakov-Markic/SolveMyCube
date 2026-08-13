@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import '../services/detector_service.dart';
 import '../services/cube_geometry.dart';
+import '../services/solve_pnp_service.dart';
 import 'page_manual_fill.dart';
 
 // A screen that allows users to take a picture using a given camera.
@@ -20,13 +21,17 @@ class PageCamera extends StatefulWidget {
 }
 
 class PageCameraState extends State<PageCamera> {
-  static const int _detectorLongSide = 640;
+  // Match the model's actual input resolution so we're not encoding/decoding
+  // a larger frame than the native side will immediately downscale anyway.
+  static const int _detectorLongSide = RubikDetector.inputSize;
+  static const double _poseEmaAlpha = 0.22;
 
   late CameraController _controller;
   late Future<void> _initializeControllerFuture;
 
   // Add these new variables
   final RubikDetector _detector = RubikDetector();
+  final SolvePnPService _solvePnP = SolvePnPService();
   bool _isProcessing = false;
   String? _detectionResult;
   List<List<List<Color?>>>? _detectedCubeFaces;
@@ -34,6 +39,7 @@ class PageCameraState extends State<PageCamera> {
   CubeGeometryResult? _cubeGeometry;
   Size? _lastFrameSize;
   List<DetectionResult> _lastDetections = const [];
+  CubePoseResult? _lastPoseResult;
   DateTime? _lastInferenceAt;
   bool _isStreaming = false;
   late final ValueNotifier<List<int>> _cellsRemainingNotifier;
@@ -43,6 +49,7 @@ class PageCameraState extends State<PageCamera> {
   Duration _lastConversionTime = Duration.zero;
   Duration _lastInferenceTime = Duration.zero;
   int _conversionFailures = 0;
+  CubePoseAngles? _lastAngles;
 
   @override
   void initState() {
@@ -100,14 +107,33 @@ class PageCameraState extends State<PageCamera> {
     }
     _lastInferenceAt = now;
 
+    if (_frameLooksDark(image)) {
+      _detectorDebug = DetectorDebugFrame(
+        activeModel: _detector.currentModelAsset,
+        lastError: 'dark-frame-gated',
+      );
+      _lastDetections = const [];
+      _lastPoseResult = null;
+      _lastAngles = null;
+      if (mounted) {
+        setState(() {
+          _detectionResult = 'No cube detected';
+          _cubeGeometry = null;
+          _detectedFacePreview = null;
+          _detectedCubeFaces = null;
+        });
+      }
+      return;
+    }
+
     final conversionStopwatch = Stopwatch()..start();
-    final bytes = await compute(
-      _convertSerializedFrameToJpeg,
+    final modelInput = await compute(
+      _convertSerializedFrameToModelInput,
       _serializeCameraImage(image, targetLongSide: _detectorLongSide),
     );
     conversionStopwatch.stop();
     _lastConversionTime = conversionStopwatch.elapsed;
-    if (bytes.isEmpty) {
+    if (modelInput.tensor.isEmpty) {
       _conversionFailures += 1;
       _detectorDebug = DetectorDebugFrame(
         activeModel: _detector.currentModelAsset,
@@ -128,13 +154,42 @@ class PageCameraState extends State<PageCamera> {
 
     try {
       final inferenceStopwatch = Stopwatch()..start();
-      final results = await _detector.detectFromBytes(bytes);
+      final pose = await _detector.detectCubePoseFromTensor(
+        modelInput.tensor,
+        letterbox: modelInput.letterbox,
+      );
       inferenceStopwatch.stop();
       if (!mounted) return;
+
+      if (pose == null && (_detector.lastDebugFrame.lastError?.startsWith('busy') ?? false)) {
+        // Previous native call is still running; this frame was dropped
+        // before ever reaching the model. Keep showing the last good result
+        // instead of flashing "No cube detected" every time we back off.
+        setState(() {
+          _isProcessing = false;
+        });
+        return;
+      }
+
+      final results = pose == null
+          ? const <DetectionResult>[]
+          : <DetectionResult>[pose.detection];
+        final smoothedPose = _smoothPoseResult(pose);
+        final poseForUi = smoothedPose ?? pose;
 
       final smoothedResults = _smoothDetections(results);
       _lastFrameSize = Size(image.width.toDouble(), image.height.toDouble());
       _lastDetections = smoothedResults;
+        _lastPoseResult = poseForUi;
+
+      if (poseForUi != null) {
+        _lastAngles = await _solvePnP.estimateAngles(
+          pose: poseForUi,
+          imageWidth: image.width,
+          imageHeight: image.height,
+        );
+      }
+
       _detectorDebug = _detector.lastDebugFrame;
       _lastInferenceTime = Duration(
         milliseconds: _detectorDebug.inferenceMs > 0
@@ -147,6 +202,8 @@ class PageCameraState extends State<PageCamera> {
           _detectionResult = 'No cube detected';
           _cubeGeometry = null;
           _lastDetections = const [];
+          _lastPoseResult = null;
+          _lastAngles = null;
           _detectedFacePreview = null;
           _detectedCubeFaces = null;
           _isProcessing = false;
@@ -162,10 +219,12 @@ class PageCameraState extends State<PageCamera> {
 
       setState(() {
         _detectionResult = 'Found: $colorList';
-        _cubeGeometry = CubeGeometry.fromDetections(
-          smoothedResults,
-          imageSize: _lastFrameSize,
-        );
+        _cubeGeometry = poseForUi != null
+          ? CubeGeometry.fromPoseResult(poseForUi, imageSize: _lastFrameSize)
+            : CubeGeometry.fromDetections(
+                smoothedResults,
+                imageSize: _lastFrameSize,
+              );
         _detectedFacePreview = _buildFacePreview(smoothedResults);
         _detectedCubeFaces = _buildDetectedCubeFaces(smoothedResults);
         _isProcessing = false;
@@ -180,6 +239,8 @@ class PageCameraState extends State<PageCamera> {
         _detectionResult = 'Error: ${e.toString()}';
         _cubeGeometry = null;
         _lastDetections = const [];
+        _lastPoseResult = null;
+        _lastAngles = null;
         _isProcessing = false;
       });
     }
@@ -221,6 +282,77 @@ class PageCameraState extends State<PageCamera> {
     ];
   }
 
+  CubePoseResult? _smoothPoseResult(CubePoseResult? current) {
+    if (current == null) {
+      return null;
+    }
+
+    final prev = _lastPoseResult;
+    if (prev == null || !prev.stage2Used || !current.stage2Used) {
+      return current;
+    }
+
+    final prevRoi = prev.roiNormalized;
+    final curRoi = current.roiNormalized;
+    final prevArea = (prevRoi.width * prevRoi.height).clamp(1e-6, 1.0);
+    final curArea = (curRoi.width * curRoi.height).clamp(1e-6, 1.0);
+    final areaRatio = curArea / prevArea;
+
+    if ((areaRatio > 2.2 || areaRatio < 0.45) && current.detection.confidence < 0.55) {
+      return prev;
+    }
+
+    final blendedRoi = Rect.fromLTWH(
+      _lerp(prevRoi.left, curRoi.left, _poseEmaAlpha),
+      _lerp(prevRoi.top, curRoi.top, _poseEmaAlpha),
+      _lerp(prevRoi.width, curRoi.width, _poseEmaAlpha),
+      _lerp(prevRoi.height, curRoi.height, _poseEmaAlpha),
+    );
+
+    final smoothedKpts = <KeypointResult>[];
+    for (var i = 0; i < current.keypoints.length; i++) {
+      final c = current.keypoints[i];
+      final p = i < prev.keypoints.length ? prev.keypoints[i] : c;
+      final cx = _lerp(p.normalized.dx, c.normalized.dx, _poseEmaAlpha);
+      final cy = _lerp(p.normalized.dy, c.normalized.dy, _poseEmaAlpha);
+      smoothedKpts.add(
+        KeypointResult(
+          index: c.index,
+          normalized: Offset(cx.clamp(0.0, 1.0), cy.clamp(0.0, 1.0)),
+          score: _lerp(p.score, c.score, 0.25),
+          visible: c.visible || p.visible,
+        ),
+      );
+    }
+
+    final smoothedDetection = DetectionResult(
+      color: current.detection.color,
+      confidence: _lerp(prev.detection.confidence, current.detection.confidence, 0.2),
+      bbox: [
+        blendedRoi.left,
+        blendedRoi.top,
+        blendedRoi.width,
+        blendedRoi.height,
+      ],
+    );
+
+    return CubePoseResult(
+      detection: smoothedDetection,
+      roiNormalized: blendedRoi,
+      keypoints: smoothedKpts,
+      solvePnP: SolvePnPHookData(
+        objectPoints: current.solvePnP.objectPoints,
+        imageKeypoints: smoothedKpts,
+      ),
+      stage1InferenceMs: current.stage1InferenceMs,
+      stage2InferenceMs: current.stage2InferenceMs,
+      stage2Used: current.stage2Used,
+      stage2Status: '${current.stage2Status}|smoothed',
+    );
+  }
+
+  double _lerp(double a, double b, double t) => a + (b - a) * t;
+
   Map<String, Object> _serializeCameraImage(
     CameraImage image, {
     required int targetLongSide,
@@ -244,47 +376,45 @@ class PageCameraState extends State<PageCamera> {
     };
   }
 
-  // Add this method for detection
-  Future<void> _detectColors(String imagePath) async {
-    setState(() {
-      _isProcessing = true;
-      _detectionResult = "Analyzing...";
-    });
-
-    try {
-      final results = await _detector.detect(imagePath);
-
-      if (results.isEmpty) {
-        setState(() {
-          _detectionResult = "No cube detected";
-          _isProcessing = false;
-        });
-        return;
-      }
-
-      // Format results for display
-      final colorList = results
-          .map(
-            (r) => '${r.color} (${(r.confidence * 100).toStringAsFixed(0)}%)',
-          )
-          .join(', ');
-
-      setState(() {
-        _detectionResult = results.isEmpty
-            ? 'No cube detected. You can still switch to manual fill.'
-            : 'Found: $colorList';
-        _lastDetections = results;
-        _cubeGeometry = CubeGeometry.fromDetections(results);
-        _detectedFacePreview = _buildFacePreview(results);
-        _detectedCubeFaces = _buildDetectedCubeFaces(results);
-        _isProcessing = false;
-      });
-    } catch (e) {
-      setState(() {
-        _detectionResult = "Error: ${e.toString()}";
-        _isProcessing = false;
-      });
+  bool _frameLooksDark(CameraImage image) {
+    if (image.planes.isEmpty) {
+      return false;
     }
+
+    final isBgra = image.format.group == ImageFormatGroup.bgra8888;
+    final brightnessSamples = <double>[];
+
+    if (isBgra) {
+      final plane = image.planes.first;
+      final bytes = plane.bytes;
+      for (var i = 0; i + 3 < bytes.length; i += 64) {
+        final b = bytes[i].toDouble();
+        final g = bytes[i + 1].toDouble();
+        final r = bytes[i + 2].toDouble();
+        brightnessSamples.add((0.114 * b) + (0.587 * g) + (0.299 * r));
+      }
+    } else {
+      final yPlane = image.planes.first;
+      final bytes = yPlane.bytes;
+      for (var i = 0; i < bytes.length; i += 32) {
+        brightnessSamples.add(bytes[i].toDouble());
+      }
+    }
+
+    if (brightnessSamples.isEmpty) {
+      return false;
+    }
+
+    var sum = 0.0;
+    var sumSq = 0.0;
+    for (final v in brightnessSamples) {
+      sum += v;
+      sumSq += v * v;
+    }
+    final mean = sum / brightnessSamples.length;
+    final variance = (sumSq / brightnessSamples.length) - (mean * mean);
+
+    return mean < 18.0 && variance < 40.0;
   }
 
   List<List<List<Color?>>> _buildFacePreview(List<DetectionResult> results) {
@@ -350,25 +480,35 @@ class PageCameraState extends State<PageCamera> {
     final best = _lastDetections
         .map((d) => d.confidence)
         .fold<double>(0, (previous, next) => next > previous ? next : previous);
-    return 'AI detections: ${_lastDetections.length}  best ${(best * 100).toStringAsFixed(0)}%';
+    final pnpReady = _lastPoseResult?.solvePnP.hasEnoughPoints == true;
+    final stage2Ms = _lastPoseResult?.stage2InferenceMs ?? 0;
+    final stage2Used = _lastPoseResult?.stage2Used == true;
+    final visibleCount = _lastPoseResult?.visibleKeypointCount ?? 0;
+    return 'AI detections: ${_lastDetections.length}  best ${(best * 100).toStringAsFixed(0)}%  '
+      'stage2 ${stage2Used ? 'on' : 'fallback'} ${stage2Ms}ms  '
+      'kpt $visibleCount/8  pnp ${pnpReady ? 'ready' : 'pending'}';
   }
 
   String _debugSummary() {
-    final bestModel = (_detectorDebug.bestModelScore * 100).toStringAsFixed(0);
-    final bestKept = (_detectorDebug.bestKeptScore * 100).toStringAsFixed(0);
+    final confidence = (_detectorDebug.confidence * 100).toStringAsFixed(0);
     final convertMs = _lastConversionTime.inMilliseconds;
     final inferMs = _lastInferenceTime.inMilliseconds;
     final activeModel = _detectorDebug.activeModel.isEmpty
       ? 'n/a'
       : _detectorDebug.activeModel.split('/').last;
     final slowTag = _detectorDebug.wasSlow ? 'SLOW' : 'OK';
+    final poseStatus = _lastPoseResult?.stage2Status ?? 'no-detection';
+    final angleText = _lastAngles == null
+      ? 'angles n/a'
+      : 'angles r${_lastAngles!.roll.toStringAsFixed(2)} '
+        'p${_lastAngles!.pitch.toStringAsFixed(2)} '
+        'y${_lastAngles!.yaw.toStringAsFixed(2)} '
+        '${_lastAngles!.solvedByNative ? 'native' : 'fallback'}';
     final errorText = _detectorDebug.lastError == null
         ? ''
         : '\nerr ${_detectorDebug.lastError}';
-    return 'raw ${_detectorDebug.modelDetections}  cand ${_detectorDebug.rawCandidates}  '
-        'strict ${_detectorDebug.strictCandidates}  fallback ${_detectorDebug.fallbackCandidates}\n'
-      'best raw $bestModel%  best kept $bestKept%  convert ${convertMs}ms  infer ${inferMs}ms  $slowTag\n'
-      'model $activeModel$errorText';
+    return 'confidence $confidence%  convert ${convertMs}ms  infer ${inferMs}ms  $slowTag\n'
+      'model $activeModel  $poseStatus\n$angleText$errorText';
   }
 
   @override
@@ -636,7 +776,7 @@ class DisplayPictureScreen extends StatelessWidget {
   }
 }
 
-Uint8List _convertSerializedFrameToJpeg(Map<String, Object> frame) {
+ModelInputTensor _convertSerializedFrameToModelInput(Map<String, Object> frame) {
   try {
     final sourceWidth = frame['width']! as int;
     final sourceHeight = frame['height']! as int;
@@ -674,7 +814,10 @@ Uint8List _convertSerializedFrameToJpeg(Map<String, Object> frame) {
       }
     } else {
       if (planes.length < 2) {
-        return Uint8List(0);
+        return ModelInputTensor(
+          tensor: Float32List(0),
+          letterbox: LetterboxInfo.identity,
+        );
       }
 
       final yPlane = planes[0] as Map<String, Object>;
@@ -746,9 +889,12 @@ Uint8List _convertSerializedFrameToJpeg(Map<String, Object> frame) {
       }
     }
 
-    return Uint8List.fromList(img.encodeJpg(imgImage, quality: 70));
+    return buildModelInputTensor(imgImage, inputSize: targetLongSide);
   } catch (_) {
-    return Uint8List(0);
+    return ModelInputTensor(
+      tensor: Float32List(0),
+      letterbox: LetterboxInfo.identity,
+    );
   }
 }
 
