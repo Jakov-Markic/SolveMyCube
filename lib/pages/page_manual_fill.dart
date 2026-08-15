@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
+import '../cube_face.dart';
 import './page_solution.dart';
 
-const defaultColorValue = [
-  Colors.red, //F
-  Colors.blue, //R
-  Colors.white, //U
-  Colors.orange, //B
-  Colors.green, //L
-  Colors.yellow, //D
-];
+/// Kept as the historical name for the app's fixed color palette (indices
+/// match [Face.values] order: F,R,U,B,L,D); sourced from [kFaceColorList] so
+/// there's a single place that defines the F/R/U/B/L/D <-> color mapping.
+final defaultColorValue = kFaceColorList;
 
 class PageManualFill extends StatefulWidget{
-  const PageManualFill({super.key});
+  final List<List<List<Color?>>>? initialCubeFaces;
+
+  const PageManualFill({super.key, this.initialCubeFaces});
 
   @override
   State<StatefulWidget> createState() => _PageManualFillState();
@@ -21,24 +20,72 @@ class _PageManualFillState extends State<PageManualFill> {
 
   Color _selectedColor = defaultColorValue[0];
   bool _isComplete = false;
+  Face _selectedFace = Face.F;
 
-  final List<List<List<Color?>>> _allFaces = 
-    List.generate(6, (_) => 
-      List.generate(3, (_) =>
-        List.generate(3, (_) => null,
-      )
-    )
-  );
+  late final List<List<List<Color?>>> _allFaces;
+  late final ValueNotifier<List<int>> _cellsRemainingNotifier;
 
-  List<int> numberOfCellsRemaining = List.filled(6, 9);
+  @override
+  void initState() {
+    super.initState();
+    _allFaces = _createFaces(widget.initialCubeFaces);
+    final counts = _initialRemainingCounts(_allFaces);
+    _cellsRemainingNotifier = ValueNotifier(counts);
+    // So a capture that's already valid (or already over/under on some
+    // color) shows the correct Solve button state immediately, not just
+    // after the user's first tap.
+    _isComplete = counts.every((c) => c == 0);
+  }
 
-  final ValueNotifier<List<int>> _cellsRemainingNotifier = 
-    ValueNotifier(List.filled(6, 9));
-  
   @override
   void dispose() {
     _cellsRemainingNotifier.dispose();
     super.dispose();
+  }
+
+  List<List<List<Color?>>> _createFaces(List<List<List<Color?>>>? initialFaces) {
+    final faces = List<List<List<Color?>>>.generate(
+      6,
+      (_) => List<List<Color?>>.generate(3, (_) => List<Color?>.filled(3, null)),
+    );
+
+    if (initialFaces == null) {
+      return faces;
+    }
+
+    for (int faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+      for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 3; col++) {
+          faces[faceIndex][row][col] = initialFaces[faceIndex][row][col];
+        }
+      }
+    }
+
+    return faces;
+  }
+
+  /// Remaining allowance per color (index matches [defaultColorValue]/
+  /// [Face.values] order). A real cube has exactly 9 stickers of each color,
+  /// so this can go *negative* - e.g. -3 means 3 too many were placed (most
+  /// often from a misclassified auto-capture) - which is intentional: it's
+  /// what lets [_PageManualFillState._isComplete] require an exact 9-per-color
+  /// split rather than just "no cell left blank", and lets the color picker
+  /// flag the over-used color so the user knows what to fix.
+  List<int> _initialRemainingCounts(List<List<List<Color?>>> faces) {
+    final counts = List<int>.filled(6, 9);
+    for (int faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+      for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 3; col++) {
+          final color = faces[faceIndex][row][col];
+          if (color == null) continue;
+          final index = defaultColorValue.indexOf(color);
+          if (index >= 0) {
+            counts[index] = counts[index] - 1;
+          }
+        }
+      }
+    }
+    return counts;
   }
   
   @override
@@ -63,9 +110,13 @@ class _PageManualFillState extends State<PageManualFill> {
             thickness: 2,
           ),
           RubiksFace(
-            selectedColor: _selectedColor, 
+            selectedColor: _selectedColor,
             allFaces: _allFaces,
             cellsRemainingNotifier: _cellsRemainingNotifier,
+            selectedFace: _selectedFace,
+            onFaceChanged: (face) => setState(() {
+              _selectedFace = face;
+            }),
             isRubikComplete: (value){
               setState(() {
                 _isComplete = value;
@@ -195,7 +246,7 @@ class ColorPickerTile extends StatelessWidget {
             width: width,
             height: height,
             decoration: BoxDecoration(
-              color: selected ? colorValue.withOpacity(0.5) : colorValue,
+              color: selected ? colorValue.withValues(alpha: 0.5) : colorValue,
               border: Border.all(
                 color: selected ? Colors.white : Colors.black,
                 width: selected ? 3 : 1,
@@ -207,7 +258,18 @@ class ColorPickerTile extends StatelessWidget {
                 Positioned(
                   right: 4,
                   bottom: 4,
-                  child: Text("$numberOfCellsRemaining"),
+                  // Negative = too many of this color placed (usually a
+                  // misclassified auto-capture) - flagged so it's obvious
+                  // which color to go fix, not just that Solve is hidden.
+                  child: Text(
+                    "$numberOfCellsRemaining",
+                    style: numberOfCellsRemaining < 0
+                        ? TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.bold,
+                          )
+                        : null,
+                  ),
                 ),
               ],
             ),
@@ -219,61 +281,56 @@ class ColorPickerTile extends StatelessWidget {
   }
 }
 
-class RubiksFace extends StatefulWidget{
+/// Shows the selected face's 3x3 grid alongside the F/R/U/B/L/D selector.
+/// Fully controlled by [selectedFace]/[onFaceChanged] - the caller owns which
+/// face is "current" (this used to be private internal state, which meant a
+/// parent had no way to know or drive which face was being edited).
+class RubiksFace extends StatelessWidget{
   final Color selectedColor;
   final List<List<List<Color?>>> allFaces;
   final ValueNotifier<List<int>> cellsRemainingNotifier;
-  
+  final Face selectedFace;
+  final ValueChanged<Face> onFaceChanged;
+
   final Function(bool value) isRubikComplete;
 
   const RubiksFace({
-    super.key, 
+    super.key,
     required this.selectedColor,
     required this.isRubikComplete,
     required this.allFaces,
     required this.cellsRemainingNotifier,
+    required this.selectedFace,
+    required this.onFaceChanged,
   });
 
   @override
-  State<StatefulWidget> createState() => _RubiksFaceState();
-}
-
-class _RubiksFaceState extends State<RubiksFace>{
-
-  int _currentFace = 0;
-
-  @override
   Widget build(BuildContext context) {
-    // TODO: implement build
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          RubiksGridView(
-            allFaces: widget.allFaces,
-            selectedFace: _currentFace,
-            selectedColor: widget.selectedColor,
-            cellsRemainingNotifier: widget.cellsRemainingNotifier,
-            isRubikComplete: widget.isRubikComplete,
-          ),
-          const SizedBox(width: 12),
-          RubikFaceSelector(
-            switchFace: (value) {
-              setState(() {
-                _currentFace = value;
-              });
-            },
-          ),
-        ],
-      );
-    }
-
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        RubiksGridView(
+          allFaces: allFaces,
+          selectedFace: selectedFace,
+          selectedColor: selectedColor,
+          cellsRemainingNotifier: cellsRemainingNotifier,
+          isRubikComplete: isRubikComplete,
+        ),
+        const SizedBox(width: 12),
+        RubikFaceSelector(
+          selectedFace: selectedFace,
+          onFaceChanged: onFaceChanged,
+        ),
+      ],
+    );
+  }
 }
 
 class RubiksGridView extends StatefulWidget{
 
   final List<List<List<Color?>>> allFaces;
-  final int selectedFace;
+  final Face selectedFace;
   final Color selectedColor;
   final Function(bool value) isRubikComplete;
   final ValueNotifier<List<int>> cellsRemainingNotifier;
@@ -294,7 +351,7 @@ class RubiksGridView extends StatefulWidget{
 class StateRubikGridView extends State<RubiksGridView>{
 
   void _paintCell(int row, int col) {
-  final oldColor = widget.allFaces[widget.selectedFace][row][col];
+  final oldColor = widget.allFaces[widget.selectedFace.index][row][col];
   
   final colorToApply = (widget.selectedColor == oldColor) ? null : widget.selectedColor;
 
@@ -308,7 +365,7 @@ class StateRubikGridView extends State<RubiksGridView>{
 
   //Update UI
   setState(() {
-    widget.allFaces[widget.selectedFace][row][col] = colorToApply;
+    widget.allFaces[widget.selectedFace.index][row][col] = colorToApply;
   });
 
   final oldIndex = oldColor != null ? defaultColorValue.indexOf(oldColor) : -1;
@@ -322,13 +379,13 @@ class StateRubikGridView extends State<RubiksGridView>{
 
   widget.isRubikComplete(_isComplete);
 }
-  bool get _isComplete => widget.allFaces.every(
-    (face) => face.every(
-      (row) => row.every(
-        (cell) => (cell != Colors.grey && cell != null), 
-      )
-    ),
-  );
+  // Requires every color's remaining allowance to hit exactly 0 - not just
+  // "no cell left blank". A real cube always has exactly 9 stickers of each
+  // color, so this also catches an over/under-counted auto-capture (e.g. a
+  // lighting-confused red/orange misread) that filled all 54 cells but with
+  // an invalid color split; Solve stays hidden until the user corrects it.
+  bool get _isComplete =>
+      widget.cellsRemainingNotifier.value.every((remaining) => remaining == 0);
 
   @override
   Widget build(BuildContext context) {
@@ -346,7 +403,7 @@ class StateRubikGridView extends State<RubiksGridView>{
                 onTap: () => _paintCell(row, col),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: widget.allFaces[widget.selectedFace][row][col] ?? Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: widget.allFaces[widget.selectedFace.index][row][col] ?? Theme.of(context).colorScheme.surfaceContainerHighest,
                     shape: BoxShape.rectangle,
                     borderRadius: BorderRadius.circular(2),
                     border: Border.all(color: Theme.of(context).colorScheme.outline),
@@ -359,37 +416,32 @@ class StateRubikGridView extends State<RubiksGridView>{
   }
 }
 
-class RubikFaceSelector extends StatefulWidget{
+/// Face picker, fully controlled by [selectedFace]/[onFaceChanged] - no
+/// internal state, so any parent (manual fill, the live camera scan, a
+/// future 3D view) can drive and observe which face is selected.
+class RubikFaceSelector extends StatelessWidget{
+  final Face selectedFace;
+  final ValueChanged<Face> onFaceChanged;
 
-  final Function(int value) switchFace;
-  const RubikFaceSelector({super.key, required this.switchFace});
-
-  @override
-  State<StatefulWidget> createState() => StateRubikFaceSelector();
-}
-
-class StateRubikFaceSelector extends State<RubikFaceSelector> {
-  
-  static const _faceLabels = ['F', 'R', 'U', 'B', 'L', 'D'];
-  int _currentFace = 0;
+  const RubikFaceSelector({
+    super.key,
+    required this.selectedFace,
+    required this.onFaceChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // TODO: implement build
     return Column(
       mainAxisSize: MainAxisSize.min,
-      children: List.generate(6, (index) {
-        final isActive = _currentFace == index;
+      children: Face.values.map((face) {
+        final isActive = face == selectedFace;
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
           child: SizedBox(
             width: 40,
             height: 30,
             child: ElevatedButton(
-              onPressed: () => {
-                widget.switchFace(index),
-                _currentFace = index,
-              },
+              onPressed: () => onFaceChanged(face),
               style: ElevatedButton.styleFrom(
                 backgroundColor: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.surfaceContainerHighest,
                 foregroundColor: isActive ? Theme.of(context).colorScheme.onPrimary : Theme.of(context).colorScheme.onSurface,
@@ -400,7 +452,7 @@ class StateRubikFaceSelector extends State<RubikFaceSelector> {
                 ),
               ),
               child: Text(
-                _faceLabels[index],
+                face.label,
                 style: TextStyle(
                   fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
                   fontSize: 13,
@@ -409,7 +461,7 @@ class StateRubikFaceSelector extends State<RubikFaceSelector> {
             ),
           ),
         );
-      }),
+      }).toList(growable: false),
     );
   }
 }
