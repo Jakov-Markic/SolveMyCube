@@ -78,9 +78,9 @@ String solveF2L(RubiksCube cube) {
     Color cR = cube.getCenterColor(Face.R);
 
     // Check if edge is already solved in FR slot
-    bool edgeSolved = ColorUtils.areColorsEqual(cube.grid[Face.F.index][1][2], cF) && 
+    bool edgeSolved = ColorUtils.areColorsEqual(cube.grid[Face.F.index][1][2], cF) &&
                       ColorUtils.areColorsEqual(cube.grid[Face.R.index][1][0], cR);
-    
+
     if (!edgeSolved) {
       // Check if target edge is stuck in a middle layer slot and extract it
       String extract = "";
@@ -90,20 +90,20 @@ String solveF2L(RubiksCube cube) {
         // Edge is in FR but wrong orientation or wrong piece
         extract = "R U R' U' F' U' F"; // Extract FR edge to top layer
       }
-      // Check BR slot - FIXED
+      // Check BR slot
       else if (matchEdge(cube, Face.R, 1, 2, Face.B, 1, 0, cF, cR)) {
-        // Edge is in BR, extract it
-        extract = "R' U' R U R' U' R U B U' B'"; // Proper BR extraction
+        // Edge is in BR, extract it (FR pattern rotated one slot around: F->R, R->B)
+        extract = "B U B' U' R' U' R";
       }
-      // Check BL slot - FIXED  
+      // Check BL slot
       else if (matchEdge(cube, Face.B, 1, 2, Face.L, 1, 0, cF, cR)) {
-        // Edge is in BL, extract it
-        extract = "B' U' B U B' U' B U L U' L'"; // Proper BL extraction
+        // Edge is in BL, extract it (FR pattern rotated two slots around: F->B, R->L)
+        extract = "L U L' U' B' U' B";
       }
-      // Check FL slot - FIXED
+      // Check FL slot
       else if (matchEdge(cube, Face.L, 1, 2, Face.F, 1, 0, cF, cR)) {
-        // Edge is in FL, extract it
-        extract = "L' U' L U L' U' L U F U' F'"; // Proper FL extraction
+        // Edge is in FL, extract it (FR pattern rotated three slots around: F->L, R->F)
+        extract = "F U F' U' L' U' L";
       }
 
       if (extract.isNotEmpty) {
@@ -162,7 +162,6 @@ String solveF2L(RubiksCube cube) {
     }
     cube.rotateCubeY();
     steps.write("y ");
-    
   }
 
   return steps.toString().trim();

@@ -11,7 +11,7 @@ String solveBottomCross(RubiksCube cube) {
     Color cF = cube.getCenterColor(Face.F);
 
     // If already solved in the active slot, skip to the next one
-    if (ColorUtils.areColorsEqual(cube.grid[Face.D.index][0][1], cD) && 
+    if (ColorUtils.areColorsEqual(cube.grid[Face.D.index][0][1], cD) &&
         ColorUtils.areColorsEqual(cube.grid[Face.F.index][2][1], cF)) {
       steps.write("y ");
       cube.rotateCubeY();
@@ -30,9 +30,9 @@ String solveBottomCross(RubiksCube cube) {
       // Check Middle Layer slots
       if (matchEdge(cube, Face.F, 1, 2, Face.R, 1, 0, cD, cF)) {
         bringToTop = "R U R'";
-      } else if (matchEdge(cube, Face.R, 1, 2, Face.B, 1, 2, cD, cF)) {
-        bringToTop = "R' U R";  
-      } else if (matchEdge(cube, Face.B, 1, 2, Face.L, 1, 2, cD, cF)) {
+      } else if (matchEdge(cube, Face.R, 1, 2, Face.B, 1, 0, cD, cF)) {
+        bringToTop = "R' U R";
+      } else if (matchEdge(cube, Face.B, 1, 2, Face.L, 1, 0, cD, cF)) {
         bringToTop = "L U L'";
       } else if (matchEdge(cube, Face.L, 1, 2, Face.F, 1, 0, cD, cF)) {
         bringToTop = "L' U L";
@@ -57,11 +57,11 @@ String solveBottomCross(RubiksCube cube) {
     // Phase B: Align piece at Front-Up (UF) position on U layer
     String alignTop = "";
     if (matchEdge(cube, Face.U, 1, 2, Face.R, 0, 1, cD, cF)) {
-      alignTop = "U'";
+      alignTop = "U";
     } else if (matchEdge(cube, Face.U, 0, 1, Face.B, 0, 1, cD, cF)) {
       alignTop = "U2";
     } else if (matchEdge(cube, Face.U, 1, 0, Face.L, 0, 1, cD, cF)) {
-      alignTop = "U";
+      alignTop = "U'";
     }
 
     if (alignTop.isNotEmpty) {

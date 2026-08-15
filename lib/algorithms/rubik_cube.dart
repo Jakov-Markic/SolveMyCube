@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../color_utils.dart';
+import '../cube_face.dart';
 
-enum Face { F, R, U, B, L, D }
+export '../cube_face.dart';
 
 enum Move {
   F, FPrime, F2, f, fPrime, f2,

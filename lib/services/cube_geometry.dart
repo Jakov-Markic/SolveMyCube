@@ -197,78 +197,6 @@ class CubeGeometry {
     );
   }
 
-  static List<List<Color?>> extractFaceGrid(
-    List<DetectionResult> detections, {
-    int gridSize = 3,
-  }) {
-    final geometry = fromDetections(detections, gridSize: gridSize);
-    final grid = List<List<Color?>>.generate(
-      gridSize,
-      (_) => List<Color?>.filled(gridSize, null),
-    );
-
-    if (detections.isEmpty || geometry.samplePoints.isEmpty) {
-      return grid;
-    }
-
-    final assignments = List<double>.filled(
-      gridSize * gridSize,
-      double.infinity,
-    );
-
-    for (final detection in detections) {
-      if (detection.bbox.length < 4) {
-        continue;
-      }
-
-      final center = Offset(
-        detection.bbox[0] + detection.bbox[2] / 2.0,
-        detection.bbox[1] + detection.bbox[3] / 2.0,
-      );
-
-      var bestIndex = 0;
-      var bestDistance = double.infinity;
-      for (var i = 0; i < geometry.samplePoints.length; i++) {
-        final distance = (geometry.samplePoints[i] - center).distance;
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          bestIndex = i;
-        }
-      }
-
-      final score = bestDistance / math.max(detection.confidence, 0.05);
-      if (score >= assignments[bestIndex]) {
-        continue;
-      }
-
-      assignments[bestIndex] = score;
-      final row = bestIndex ~/ gridSize;
-      final col = bestIndex % gridSize;
-      grid[row][col] = colorFromLabel(detection.color);
-    }
-
-    return grid;
-  }
-
-  static Color? colorFromLabel(String name) {
-    switch (name.toLowerCase()) {
-      case 'white':
-        return Colors.white;
-      case 'yellow':
-        return Colors.yellow;
-      case 'red':
-        return Colors.red;
-      case 'orange':
-        return Colors.orange;
-      case 'blue':
-        return Colors.blue;
-      case 'green':
-        return Colors.green;
-      default:
-        return Colors.grey;
-    }
-  }
-
   static Rect? _boundsFromPoints(List<Offset> points) {
     if (points.isEmpty) return null;
     final xs = points.map((p) => p.dx).toList(growable: false);
@@ -314,23 +242,73 @@ class CubeGeometry {
   static List<Offset> _buildGridPoints(List<Offset> quad, int gridSize) {
     if (quad.length < 4 || gridSize <= 0) return const [];
 
-    final topLeft = quad[0];
-    final topRight = quad[1];
-    final bottomRight = quad[2];
-    final bottomLeft = quad[3];
-
     final points = <Offset>[];
     for (var row = 0; row < gridSize; row++) {
       final v = (row + 0.5) / gridSize;
-      final leftEdge = _lerp(topLeft, bottomLeft, v);
-      final rightEdge = _lerp(topRight, bottomRight, v);
-
       for (var col = 0; col < gridSize; col++) {
         final u = (col + 0.5) / gridSize;
-        points.add(_lerp(leftEdge, rightEdge, u));
+        points.add(_lerpQuad(quad, u, v));
       }
     }
     return points;
+  }
+
+  /// Bilinear-interpolates a point within [quad] (topLeft, topRight,
+  /// bottomRight, bottomLeft), at fractional position (u, v) in [0,1]x[0,1].
+  static Offset _lerpQuad(List<Offset> quad, double u, double v) {
+    final leftEdge = _lerp(quad[0], quad[3], v);
+    final rightEdge = _lerp(quad[1], quad[2], v);
+    return _lerp(leftEdge, rightEdge, u);
+  }
+
+  /// Several sample points spread across a single grid cell of [quad]
+  /// (bilinear interpolation, same convention as [_buildGridPoints]/
+  /// [samplePoints]: row 0/col 0 is the top-left cell), for averaging a
+  /// sticker's color across multiple spots instead of trusting one point -
+  /// robust to localized glare, shadow, or dirt. Point 0 is always the cell
+  /// center (matches the corresponding entry in [samplePoints] exactly);
+  /// the rest are small offsets around it, kept well inside the cell
+  /// (governed by [spread], a fraction of one cell's width/height) so they
+  /// don't bleed into neighboring stickers. Also used by [CubeGeometryPainter]
+  /// to draw dots at the exact points a color extraction would sample, so the
+  /// visualization never drifts out of sync with the real algorithm.
+  static List<Offset> cellSubSamplePoints(
+    List<Offset> quad,
+    int row,
+    int col, {
+    int gridSize = 3,
+    int pointsPerCell = 5,
+    double spread = 0.22,
+  }) {
+    if (quad.length < 4 || pointsPerCell <= 0) return const [];
+
+    final cu = (col + 0.5) / gridSize;
+    final cv = (row + 0.5) / gridSize;
+    final du = spread / gridSize;
+    final dv = spread / gridSize;
+
+    const candidateOffsets = [
+      Offset(0, 0),
+      Offset(-1, 0),
+      Offset(1, 0),
+      Offset(0, -1),
+      Offset(0, 1),
+      Offset(-0.7, -0.7),
+      Offset(0.7, -0.7),
+      Offset(-0.7, 0.7),
+      Offset(0.7, 0.7),
+    ];
+
+    return candidateOffsets
+        .take(pointsPerCell)
+        .map(
+          (o) => _lerpQuad(
+            quad,
+            (cu + o.dx * du).clamp(0.0, 1.0),
+            (cv + o.dy * dv).clamp(0.0, 1.0),
+          ),
+        )
+        .toList(growable: false);
   }
 
   static List<Offset> _convexHull(List<Offset> points) {
@@ -414,9 +392,19 @@ class CubeGeometryPainter extends CustomPainter {
   final int rotationQuarterTurns;
   final List<DetectionResult> detections;
 
+  /// Wireframe/dot colors, sourced from the active theme's ColorScheme
+  /// (light vs dark) rather than hardcoded - front-face elements use
+  /// [primaryColor], back-face/connector/grid elements use [secondaryColor].
+  /// CustomPainter has no BuildContext, so the caller reads these from
+  /// `Theme.of(context).colorScheme` and passes them in.
+  final Color primaryColor;
+  final Color secondaryColor;
+
   CubeGeometryPainter({
     required this.geometry,
     required this.sourceSize,
+    required this.primaryColor,
+    required this.secondaryColor,
     this.rotationQuarterTurns = 0,
     this.detections = const [],
   });
@@ -477,8 +465,10 @@ class CubeGeometryPainter extends CustomPainter {
       );
     }
 
+    // Kept very transparent (roughly 90%) so the overlay stays out of the
+    // way of the actual camera view it's annotating.
     final fill = Paint()
-      ..color = Colors.limeAccent.withValues(alpha: 0.18)
+      ..color = primaryColor.withValues(alpha: 0.08)
       ..style = PaintingStyle.fill;
 
     final path = Path();
@@ -494,30 +484,36 @@ class CubeGeometryPainter extends CustomPainter {
 
     _paintCubeWireframe(canvas, mapPoint);
 
-    final pointPaint = Paint()
-      ..color = Colors.amberAccent
-      ..style = PaintingStyle.fill;
-
-    for (final point in geometry.samplePoints) {
-      canvas.drawCircle(mapPoint(point), 4, pointPaint);
-    }
-
-    if (geometry.samplePoints.length >= 9) {
+    if (outline.length >= 4) {
       final rowPaint = Paint()
-        ..color = Colors.white.withValues(alpha: 0.35)
+        ..color = secondaryColor.withValues(alpha: 0.25)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.2;
 
       for (var row = 0; row < 3; row++) {
-        final start = geometry.samplePoints[row * 3];
-        final end = geometry.samplePoints[row * 3 + 2];
+        final start = CubeGeometry._lerpQuad(outline, 0, (row + 0.5) / 3);
+        final end = CubeGeometry._lerpQuad(outline, 1, (row + 0.5) / 3);
+        canvas.drawLine(mapPoint(start), mapPoint(end), rowPaint);
+      }
+      for (var col = 0; col < 3; col++) {
+        final start = CubeGeometry._lerpQuad(outline, (col + 0.5) / 3, 0);
+        final end = CubeGeometry._lerpQuad(outline, (col + 0.5) / 3, 1);
         canvas.drawLine(mapPoint(start), mapPoint(end), rowPaint);
       }
 
-      for (var col = 0; col < 3; col++) {
-        final start = geometry.samplePoints[col];
-        final end = geometry.samplePoints[col + 6];
-        canvas.drawLine(mapPoint(start), mapPoint(end), rowPaint);
+      // Small dots at the actual points a color capture would sample from
+      // each sticker cell - visual feedback for "this is what's being read",
+      // using the same points FaceColorExtractor averages over.
+      final samplePaint = Paint()
+        ..color = primaryColor.withValues(alpha: 0.45)
+        ..style = PaintingStyle.fill;
+      for (var row = 0; row < 3; row++) {
+        for (var col = 0; col < 3; col++) {
+          final points = CubeGeometry.cellSubSamplePoints(outline, row, col);
+          for (final point in points) {
+            canvas.drawCircle(mapPoint(point), 2.5, samplePaint);
+          }
+        }
       }
     }
   }
@@ -534,24 +530,27 @@ class CubeGeometryPainter extends CustomPainter {
       return;
     }
 
-    const frontColor = Colors.limeAccent;
-    const backColor = Colors.cyanAccent;
-    const connectorColor = Colors.white;
+    // Front face uses primaryColor, back face/connectors use secondaryColor -
+    // just the two theme colors, kept very transparent (roughly 90%) so the
+    // overlay stays out of the way of the camera feed underneath it.
+    final frontColor = primaryColor;
+    final backColor = secondaryColor;
+    final connectorColor = secondaryColor;
 
     final frontEdgePaint = Paint()
-      ..color = frontColor.withValues(alpha: 0.95)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round;
-    final backEdgePaint = Paint()
-      ..color = backColor.withValues(alpha: 0.85)
+      ..color = frontColor.withValues(alpha: 0.35)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
-    final connectorEdgePaint = Paint()
-      ..color = connectorColor.withValues(alpha: 0.75)
+    final backEdgePaint = Paint()
+      ..color = backColor.withValues(alpha: 0.3)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+    final connectorEdgePaint = Paint()
+      ..color = connectorColor.withValues(alpha: 0.22)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
 
     for (final edge in CubeGeometryResult.wireframeEdges) {
@@ -586,25 +585,17 @@ class CubeGeometryPainter extends CustomPainter {
 
       canvas.drawCircle(
         center,
-        7,
+        6,
         Paint()
-          ..color = Colors.black.withValues(alpha: 0.55)
+          ..color = Colors.black.withValues(alpha: 0.2)
           ..style = PaintingStyle.fill,
       );
       canvas.drawCircle(
         center,
-        5,
+        4,
         Paint()
-          ..color = dotColor.withValues(alpha: 0.4 + 0.6 * vertex.score.clamp(0.0, 1.0))
+          ..color = dotColor.withValues(alpha: 0.15 + 0.35 * vertex.score.clamp(0.0, 1.0))
           ..style = PaintingStyle.fill,
-      );
-      canvas.drawCircle(
-        center,
-        5,
-        Paint()
-          ..color = Colors.black.withValues(alpha: 0.6)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1,
       );
     }
   }
@@ -641,6 +632,8 @@ class CubeGeometryPainter extends CustomPainter {
         oldDelegate.geometry.cubeVertices != geometry.cubeVertices ||
         oldDelegate.sourceSize != sourceSize ||
         oldDelegate.rotationQuarterTurns != rotationQuarterTurns ||
-        oldDelegate.detections != detections;
+        oldDelegate.detections != detections ||
+        oldDelegate.primaryColor != primaryColor ||
+        oldDelegate.secondaryColor != secondaryColor;
   }
 }

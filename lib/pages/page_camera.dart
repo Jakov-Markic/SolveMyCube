@@ -5,8 +5,10 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
+import '../cube_face.dart';
 import '../services/detector_service.dart';
 import '../services/cube_geometry.dart';
+import '../services/face_color_extractor.dart';
 import '../services/solve_pnp_service.dart';
 import 'page_manual_fill.dart';
 
@@ -34,12 +36,20 @@ class PageCameraState extends State<PageCamera> {
   final SolvePnPService _solvePnP = SolvePnPService();
   bool _isProcessing = false;
   String? _detectionResult;
-  List<List<List<Color?>>>? _detectedCubeFaces;
-  List<List<List<Color?>>>? _detectedFacePreview;
   CubeGeometryResult? _cubeGeometry;
   Size? _lastFrameSize;
   List<DetectionResult> _lastDetections = const [];
   CubePoseResult? _lastPoseResult;
+  ModelInputTensor? _lastModelInput;
+
+  // Which face the F/R/U/B/L/D selector currently points at, and the
+  // captured (not live-only) scan results per face. This is a manual stand-in
+  // for real orientation tracking - see the capture flow for details.
+  Face _selectedFace = Face.F;
+  final List<List<List<Color?>>> _scannedFaces = List<List<List<Color?>>>.generate(
+    6,
+    (_) => List<List<Color?>>.generate(3, (_) => List<Color?>.filled(3, null)),
+  );
   DateTime? _lastInferenceAt;
   bool _isStreaming = false;
   late final ValueNotifier<List<int>> _cellsRemainingNotifier;
@@ -119,8 +129,6 @@ class PageCameraState extends State<PageCamera> {
         setState(() {
           _detectionResult = 'No cube detected';
           _cubeGeometry = null;
-          _detectedFacePreview = null;
-          _detectedCubeFaces = null;
         });
       }
       return;
@@ -181,6 +189,9 @@ class PageCameraState extends State<PageCamera> {
       _lastFrameSize = Size(image.width.toDouble(), image.height.toDouble());
       _lastDetections = smoothedResults;
         _lastPoseResult = poseForUi;
+      if (modelInput.contentRgb.isNotEmpty) {
+        _lastModelInput = modelInput;
+      }
 
       if (poseForUi != null) {
         _lastAngles = await _solvePnP.estimateAngles(
@@ -204,8 +215,6 @@ class PageCameraState extends State<PageCamera> {
           _lastDetections = const [];
           _lastPoseResult = null;
           _lastAngles = null;
-          _detectedFacePreview = null;
-          _detectedCubeFaces = null;
           _isProcessing = false;
         });
         return;
@@ -225,8 +234,6 @@ class PageCameraState extends State<PageCamera> {
                 smoothedResults,
                 imageSize: _lastFrameSize,
               );
-        _detectedFacePreview = _buildFacePreview(smoothedResults);
-        _detectedCubeFaces = _buildDetectedCubeFaces(smoothedResults);
         _isProcessing = false;
       });
     } catch (e) {
@@ -417,31 +424,55 @@ class PageCameraState extends State<PageCamera> {
     return mean < 18.0 && variance < 40.0;
   }
 
-  List<List<List<Color?>>> _buildFacePreview(List<DetectionResult> results) {
-    final faces = List<List<List<Color?>>>.generate(
-      6,
-      (_) =>
-          List<List<Color?>>.generate(3, (_) => List<Color?>.filled(3, null)),
+  /// Samples sticker colors from the last frame a pose was detected in, using
+  /// the same geometry currently drawn on screen (so what you see is what
+  /// gets captured), and writes them into the currently-selected face slot.
+  ///
+  /// This is a manual stand-in for real orientation tracking: the user tells
+  /// the app which face is being shown via the F/R/U/B/L/D selector, rather
+  /// than the app inferring it from cube rotation. See the face-color
+  /// extraction conversation for the planned auto-tracking design.
+  void _captureCurrentFace() {
+    final pose = _lastPoseResult;
+    final modelInput = _lastModelInput;
+    if (pose == null || modelInput == null || modelInput.contentRgb.isEmpty) {
+      setState(() {
+        _detectionResult = 'No cube in view to capture';
+      });
+      return;
+    }
+
+    final captureGeometry = CubeGeometry.fromPoseResult(
+      pose,
+      imageSize: Size(
+        modelInput.contentWidth.toDouble(),
+        modelInput.contentHeight.toDouble(),
+      ),
+    );
+    if (captureGeometry.outline.length != 4) {
+      setState(() {
+        _detectionResult = 'Not enough visible corners to capture this face';
+      });
+      return;
+    }
+
+    final contentImage = img.Image.fromBytes(
+      width: modelInput.contentWidth,
+      height: modelInput.contentHeight,
+      bytes: modelInput.contentRgb.buffer,
+      numChannels: 3,
+      order: img.ChannelOrder.rgb,
     );
 
-    final faceGrid = CubeGeometry.extractFaceGrid(results);
-    faces[0] = faceGrid;
-
-    return faces;
-  }
-
-  List<List<List<Color?>>> _buildDetectedCubeFaces(
-    List<DetectionResult> results,
-  ) {
-    final faces = List<List<List<Color?>>>.generate(
-      6,
-      (_) =>
-          List<List<Color?>>.generate(3, (_) => List<Color?>.filled(3, null)),
+    final extracted = FaceColorExtractor.extractClassified(
+      contentImage,
+      captureGeometry.outline,
     );
 
-    faces[0] = CubeGeometry.extractFaceGrid(results);
-
-    return faces;
+    setState(() {
+      _scannedFaces[_selectedFace.index] = extracted;
+      _detectionResult = 'Captured face ${_selectedFace.label}';
+    });
   }
 
   Future<void> _openManualFill() async {
@@ -450,7 +481,7 @@ class PageCameraState extends State<PageCamera> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) =>
-            PageManualFill(initialCubeFaces: _detectedCubeFaces),
+            PageManualFill(initialCubeFaces: _scannedFaces),
       ),
     );
   }
@@ -547,6 +578,8 @@ class PageCameraState extends State<PageCamera> {
                           sourceSize: _lastFrameSize!,
                           rotationQuarterTurns: 1,
                           detections: _lastDetections,
+                          primaryColor: Theme.of(context).colorScheme.primary,
+                          secondaryColor: Theme.of(context).colorScheme.secondary,
                         ),
                       ),
                     ),
@@ -657,36 +690,38 @@ class PageCameraState extends State<PageCamera> {
                                         CrossAxisAlignment.start,
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      const Text(
-                                        'Current detected face',
-                                        style: TextStyle(
+                                      Text(
+                                        'Scanned face: ${_selectedFace.label}',
+                                        style: const TextStyle(
                                           color: Colors.black87,
                                           fontWeight: FontWeight.bold,
                                           fontSize: 13,
                                         ),
                                       ),
                                       const SizedBox(height: 8),
-                                      IgnorePointer(
-                                        child: RubiksFace(
-                                          selectedColor: Colors.grey,
-                                          allFaces:
-                                              _detectedFacePreview ??
-                                              List<List<List<Color?>>>.generate(
-                                                6,
-                                                (_) =>
-                                                    List<List<Color?>>.generate(
-                                                      3,
-                                                      (_) =>
-                                                          List<Color?>.filled(
-                                                            3,
-                                                            null,
-                                                          ),
-                                                    ),
-                                              ),
-                                          cellsRemainingNotifier:
-                                              _cellsRemainingNotifier,
-                                          isRubikComplete: (_) {},
-                                        ),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children: [
+                                          IgnorePointer(
+                                            child: RubiksGridView(
+                                              allFaces: _scannedFaces,
+                                              selectedFace: _selectedFace,
+                                              selectedColor: Colors.grey,
+                                              cellsRemainingNotifier:
+                                                  _cellsRemainingNotifier,
+                                              isRubikComplete: (_) {},
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          RubikFaceSelector(
+                                            selectedFace: _selectedFace,
+                                            onFaceChanged: (face) => setState(() {
+                                              _selectedFace = face;
+                                            }),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -694,20 +729,43 @@ class PageCameraState extends State<PageCamera> {
                               ),
                             ),
                             const SizedBox(width: 12),
-                            SizedBox(
-                              width: 60,
-                              height: 60,
-                              child: FloatingActionButton(
-                                heroTag: 'switch-to-manual',
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.primary,
-                                foregroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.onPrimary,
-                                onPressed: _openManualFill,
-                                child: const Icon(Icons.switch_camera),
-                              ),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 60,
+                                  height: 60,
+                                  child: FloatingActionButton(
+                                    heroTag: 'capture-face',
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.secondary,
+                                    foregroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.onSecondary,
+                                    onPressed: _lastPoseResult != null
+                                        ? _captureCurrentFace
+                                        : null,
+                                    child: const Icon(Icons.camera_alt),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: 60,
+                                  height: 60,
+                                  child: FloatingActionButton(
+                                    heroTag: 'switch-to-manual',
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    foregroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimary,
+                                    onPressed: _openManualFill,
+                                    child: const Icon(Icons.switch_camera),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -817,6 +875,9 @@ ModelInputTensor _convertSerializedFrameToModelInput(Map<String, Object> frame) 
         return ModelInputTensor(
           tensor: Float32List(0),
           letterbox: LetterboxInfo.identity,
+          contentRgb: Uint8List(0),
+          contentWidth: 0,
+          contentHeight: 0,
         );
       }
 
@@ -894,6 +955,9 @@ ModelInputTensor _convertSerializedFrameToModelInput(Map<String, Object> frame) 
     return ModelInputTensor(
       tensor: Float32List(0),
       letterbox: LetterboxInfo.identity,
+      contentRgb: Uint8List(0),
+      contentWidth: 0,
+      contentHeight: 0,
     );
   }
 }

@@ -29,6 +29,7 @@ class _PageSolutionState extends State<PageSolution> {
   bool _isLoading = true;
   String? _errorMessage;
   int _currentStep = 0;
+  Face _selectedFace = Face.F;
 
   // Simply map algorithm names to solver functions
   static final Map<String, SolverFunction> _solverMap = {
@@ -142,14 +143,28 @@ class _PageSolutionState extends State<PageSolution> {
                   style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
                 ),
               const SizedBox(height: 20),
-              IgnorePointer(
-                child: Center(
-                  child: RubiksFace(
-                    selectedColor: Colors.white,
-                    allFaces: currentFaces,
-                    cellsRemainingNotifier: _cellsRemainingNotifier,
-                    isRubikComplete: (_) {},
-                  ),
+              Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    IgnorePointer(
+                      child: RubiksGridView(
+                        allFaces: currentFaces,
+                        selectedFace: _selectedFace,
+                        selectedColor: Colors.white,
+                        cellsRemainingNotifier: _cellsRemainingNotifier,
+                        isRubikComplete: (_) {},
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    RubikFaceSelector(
+                      selectedFace: _selectedFace,
+                      onFaceChanged: (face) => setState(() {
+                        _selectedFace = face;
+                      }),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),

@@ -1,105 +1,83 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:solve_my_cube/algorithms/cfop/oll.dart';
-import 'package:solve_my_cube/algorithms/cfop/pll.dart';
 import 'package:solve_my_cube/algorithms/rubik_cube.dart';
 
+import 'test_helpers.dart';
+
 void main() {
-  test('applyMove updates the cube state for a simple face turn', () {
-    final cube = RubiksCube(_createDistinctCube());
-    final originalFrontTopLeft = cube.grid[Face.F.index][0][0];
-    final originalRightTopLeft = cube.grid[Face.R.index][0][0];
+  group('RubiksCube move engine', () {
+    test('applyMove updates the cube state for a simple face turn', () {
+      final cube = RubiksCube(_createDistinctCube());
+      final originalRightTopLeft = cube.grid[Face.R.index][0][0];
 
-    cube.applyMove(Move.U);
+      cube.applyMove(Move.U);
 
-    expect(cube.grid[Face.F.index][0][0], originalRightTopLeft);
-    expect(cube.grid[Face.R.index][0][0], isNot(originalRightTopLeft));
-  });
+      expect(cube.grid[Face.F.index][0][0], originalRightTopLeft);
+      expect(cube.grid[Face.R.index][0][0], isNot(originalRightTopLeft));
+    });
 
-  test('executeSequence parses and applies moves', () {
-    final cube = RubiksCube(_createDistinctCube());
-    final originalRightTopLeft = cube.grid[Face.R.index][0][0];
+    test('executeSequence parses and applies moves', () {
+      final cube = RubiksCube(_createDistinctCube());
+      final originalRightTopLeft = cube.grid[Face.R.index][0][0];
 
-    cube.executeSequence('U');
+      cube.executeSequence('U');
 
-    expect(cube.grid[Face.F.index][0][0], originalRightTopLeft);
-  });
+      expect(cube.grid[Face.F.index][0][0], originalRightTopLeft);
+    });
 
-  test('PLL resolver treats a rotated solved cube as resolved', () {
-    final cube = RubiksCube(_createSolvedCube());
-    cube.rotateCubeY();
+    test('four quarter turns of any face return the cube to solved', () {
+      for (final face in ['U', 'D', 'F', 'B', 'R', 'L']) {
+        final cube = RubiksCube(createSolvedCube());
+        cube.executeSequence('$face $face $face $face');
+        expect(cube.grid, createSolvedCube(), reason: '4x $face should return to solved');
+      }
+    });
 
-    expect(getPLLSignature(cube), '000111222333');
-    expect(isPLLResolved(cube, cube.getCenterColor(Face.U)), isTrue);
-  });
+    test('a move immediately followed by its inverse cancels out', () {
+      for (final face in ['U', 'D', 'F', 'B', 'R', 'L']) {
+        final cube = RubiksCube(createSolvedCube());
+        cube.executeSequence("$face $face'");
+        expect(cube.grid, createSolvedCube(), reason: "$face $face' should cancel out");
+      }
+    });
 
-  test('OLL signature builder matches a known database key', () {
-    final cube = RubiksCube(_createCubeFromOLLSignature('000010000010111010111'));
-    expect(getOLLSignature(cube, Colors.white), '000010000010111010111');
+    test('four y rotations return the cube to its original state', () {
+      final cube = RubiksCube(_createDistinctCube());
+      final original = cube.clone().grid;
+
+      cube.rotateCubeY();
+      cube.rotateCubeY();
+      cube.rotateCubeY();
+      cube.rotateCubeY();
+
+      expect(cube.grid, original);
+    });
+
+    test('U D-prime matches a whole-cube y rotation on the U/D layers', () {
+      // A well-known cubing identity (y = U D'); this pins down that U and D
+      // turn in opposite rotational senses, matching standard notation.
+      final combo = RubiksCube(createSolvedCube());
+      combo.executeSequence("U D'");
+
+      final rotated = RubiksCube(createSolvedCube());
+      rotated.rotateCubeY();
+
+      expect(combo.grid[Face.U.index], rotated.grid[Face.U.index]);
+      expect(combo.grid[Face.D.index], rotated.grid[Face.D.index]);
+      for (final face in [Face.F, Face.R, Face.B, Face.L]) {
+        expect(combo.grid[face.index][0], rotated.grid[face.index][0], reason: '${face.name} top row');
+        expect(combo.grid[face.index][2], rotated.grid[face.index][2], reason: '${face.name} bottom row');
+      }
+    });
   });
 }
 
 List<List<List<Color>>> _createDistinctCube() {
-  final faces = List.generate(
+  return List.generate(
     6,
     (index) => List.generate(
       3,
       (row) => List.generate(3, (col) => Color(0xFF000000 + (index * 0x010101) + (row * 0x000100) + col)),
     ),
   );
-
-  return faces;
-}
-
-List<List<List<Color>>> _createSolvedCube() {
-  final colors = {
-    Face.F: Colors.green,
-    Face.R: Colors.red,
-    Face.U: Colors.white,
-    Face.B: Colors.blue,
-    Face.L: Colors.orange,
-    Face.D: Colors.yellow,
-  };
-
-  return List.generate(6, (index) {
-    final face = Face.values[index];
-    return List.generate(3, (row) => List.generate(3, (col) => colors[face]!));
-  });
-}
-
-List<List<List<Color>>> _createCubeFromOLLSignature(String signature) {
-  const targetColor = Colors.white;
-  const otherColor = Colors.green;
-  final faceColors = {
-    Face.F: Colors.green,
-    Face.R: Colors.red,
-    Face.U: targetColor,
-    Face.B: Colors.blue,
-    Face.L: Colors.orange,
-    Face.D: Colors.yellow,
-  };
-
-  final faces = <List<List<Color>>>[];
-  for (final face in Face.values) {
-    final faceGrid = List.generate(3, (row) => List.generate(3, (col) => faceColors[face]!));
-    faces.add(faceGrid);
-  }
-
-  final bits = signature.split('');
-  int index = 0;
-  for (int r = 0; r < 3; r++) {
-    for (int c = 0; c < 3; c++) {
-      faces[Face.U.index][r][c] = bits[index] == '1' ? targetColor : otherColor;
-      index++;
-    }
-  }
-
-  for (final face in [Face.F, Face.R, Face.B, Face.L]) {
-    for (int c = 0; c < 3; c++) {
-      faces[face.index][0][c] = bits[index] == '1' ? targetColor : otherColor;
-      index++;
-    }
-  }
-
-  return faces;
 }

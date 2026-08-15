@@ -1,60 +1,84 @@
-import 'package:flutter/material.dart';
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:solve_my_cube/algorithms/cfop/bottom_cross.dart';
-import 'package:solve_my_cube/algorithms/rubik_cube.dart';
+import 'package:solve_my_cube/algorithms/cfop/cfop.dart';
+
+import 'test_helpers.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  group('solveBottomCross', () {
+    test('leaves an already-solved cross untouched', () {
+      final cube = RubiksCube(createSolvedCube());
 
-  test('solveBottomCross solves the bottom cross correctly', () {
-    final cube = RubiksCube(_createSolvedCube());
+      solveBottomCross(cube);
 
-    // Scramble the cube just enough to break the bottom cross.
-    cube.executeSequence('F B');
+      expect(cube.checkBottomCross(), isTrue);
+    });
 
-    expect(_isBottomCrossSolved(cube), isFalse);
+    test('solves a lightly scrambled cross', () {
+      final cube = cubeFromSequence('F B');
 
-    final steps = solveBottomCross(cube);
+      expect(cube.checkBottomCross(), isFalse);
 
-    expect(steps, isNotEmpty);
-    expect(_isBottomCrossSolved(cube), isTrue);
-  });
-}
+      final steps = solveBottomCross(cube);
 
-bool _isBottomCrossSolved(RubiksCube cube) {
-  final bottomCenter = cube.getCenterColor(Face.D);
-  final frontCenter = cube.getCenterColor(Face.F);
-  final rightCenter = cube.getCenterColor(Face.R);
-  final backCenter = cube.getCenterColor(Face.B);
-  final leftCenter = cube.getCenterColor(Face.L);
+      expect(steps, isNotEmpty);
+      expect(cube.checkBottomCross(), isTrue);
+    });
 
-  final edgesMatchBottom =
-      cube.grid[Face.D.index][0][1] == bottomCenter &&
-      cube.grid[Face.D.index][1][0] == bottomCenter &&
-      cube.grid[Face.D.index][1][2] == bottomCenter &&
-      cube.grid[Face.D.index][2][1] == bottomCenter;
+    test('solves every edge starting from each of the 4 middle-layer slots', () {
+      // Scrambles chosen so a cross edge lands in the FR, BR, BL and FL
+      // middle-layer slots respectively (regression coverage for the
+      // matchEdge column-index bug in the RB/BL slot checks).
+      for (final scramble in ["R U R' U'", "R' U' R U B", "B' U' B U L", "L' U' L U F"]) {
+        final cube = cubeFromSequence(scramble);
 
-  final edgesMatchSides =
-      cube.grid[Face.F.index][2][1] == frontCenter &&
-      cube.grid[Face.R.index][2][1] == rightCenter &&
-      cube.grid[Face.B.index][2][1] == backCenter &&
-      cube.grid[Face.L.index][2][1] == leftCenter;
+        solveBottomCross(cube);
 
-  return edgesMatchBottom && edgesMatchSides;
-}
+        expect(cube.checkBottomCross(), isTrue, reason: 'scramble "$scramble" should still solve the cross');
+      }
+    });
 
-List<List<List<Color>>> _createSolvedCube() {
-  final colors = {
-    Face.F: Colors.green,
-    Face.R: Colors.red,
-    Face.U: Colors.white,
-    Face.B: Colors.blue,
-    Face.L: Colors.orange,
-    Face.D: Colors.yellow,
-  };
+    test('regression: edge parked in the BR/BL middle slot is detected and solved', () {
+      // This exact scramble left the DR-color edge sitting in the BR slot,
+      // which the old (buggy) column indices never matched, corrupting the cross.
+      final cube = cubeFromSequence(
+        "U R' L U2 F' U' L' D' L U L B2 L2 F2 D L2 U' R2 F R2 D2 F U",
+      );
 
-  return List.generate(6, (index) {
-    final face = Face.values[index];
-    return List.generate(3, (row) => List.generate(3, (col) => colors[face]!));
+      solveBottomCross(cube);
+
+      expect(cube.checkBottomCross(), isTrue);
+    });
+
+    test('regression: aligning from UR/UL top-layer positions routes to the correct front slot', () {
+      // This exact scramble required aligning a piece sitting at UR, which the
+      // old (buggy) alignTop directions sent to UB instead of UF.
+      final cube = cubeFromSequence(
+        "F' L F' D' L' D L D L L' L2 L' R2 B' R2 F F2 D2 R' F2 R' U U2 U' U2",
+      );
+
+      solveBottomCross(cube);
+
+      expect(cube.checkBottomCross(), isTrue);
+    });
+
+    test('solves the cross across many random scrambles', () {
+      final rng = Random(1);
+      for (int i = 0; i < 200; i++) {
+        final cube = RubiksCube(createSolvedCube());
+        final scramble = randomScramble(rng);
+        cube.executeSequence(scramble);
+
+        solveBottomCross(cube);
+
+        expect(
+          cube.checkBottomCross(),
+          isTrue,
+          reason: 'scramble "$scramble" (iteration $i) should leave the cross solved',
+        );
+      }
+    });
   });
 }

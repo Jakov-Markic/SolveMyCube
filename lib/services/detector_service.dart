@@ -33,12 +33,27 @@ class LetterboxInfo {
 }
 
 /// A model-ready input tensor (NCHW, float32, 0..1) plus the padding
-/// metadata needed to undo it once keypoints come back from the model.
+/// metadata needed to undo it once keypoints come back from the model, plus
+/// the raw (unrotated, unpadded) RGB pixels the tensor was built from - kept
+/// around so callers can sample actual sticker colors from the same frame a
+/// detection came from, without re-decoding anything. Pass [contentWidth]/
+/// [contentHeight] and [contentRgb] to `img.Image.fromBytes(...)` to get a
+/// decodable image back; its pixel space matches [CubeGeometry.fromPoseResult]
+/// when called with `imageSize: Size(contentWidth, contentHeight)`.
 class ModelInputTensor {
   final Float32List tensor;
   final LetterboxInfo letterbox;
+  final Uint8List contentRgb;
+  final int contentWidth;
+  final int contentHeight;
 
-  const ModelInputTensor({required this.tensor, required this.letterbox});
+  const ModelInputTensor({
+    required this.tensor,
+    required this.letterbox,
+    required this.contentRgb,
+    required this.contentWidth,
+    required this.contentHeight,
+  });
 }
 
 /// Builds a model-ready input tensor from a decoded camera/image frame:
@@ -75,9 +90,15 @@ ModelInputTensor buildModelInputTensor(
   img.fill(canvas, color: img.ColorRgb8(fillGray, fillGray, fillGray));
   img.compositeImage(canvas, content, dstX: padX, dstY: padY);
 
-  // Matches the fixed 90-degree clockwise rotation the old native pipeline
-  // used to apply (see RubikDetector._mapModelPointToFrame for the inverse).
-  final rotated = img.copyRotate(canvas, angle: 90);
+  // Rotates the same direction RubikDetector._mapModelPointToFrame undoes.
+  // Verified empirically against the exported model (not just algebra): Dart's
+  // `image` package's copyRotate(angle: X) does not necessarily rotate the same
+  // direction as the old native pipeline's Android Matrix.postRotate(X) did for
+  // the same angle value - they're different libraries/platforms. angle: 90 here
+  // was that wrong carried-over assumption (confirmed via a Python round-trip
+  // test against video_coco ground truth: angle:90 gave confidence 0.65 and
+  // 0.37 mean normalized error; angle:270 gives confidence 0.88 and 0.035 error).
+  final rotated = img.copyRotate(canvas, angle: 270);
 
   final tensor = Float32List(3 * inputSize * inputSize);
   final planeSize = inputSize * inputSize;
@@ -92,6 +113,17 @@ ModelInputTensor buildModelInputTensor(
     }
   }
 
+  final contentRgb = Uint8List(contentWidth * contentHeight * 3);
+  var rgbIdx = 0;
+  for (var y = 0; y < contentHeight; y++) {
+    for (var x = 0; x < contentWidth; x++) {
+      final pixel = content.getPixel(x, y);
+      contentRgb[rgbIdx++] = pixel.r.toInt();
+      contentRgb[rgbIdx++] = pixel.g.toInt();
+      contentRgb[rgbIdx++] = pixel.b.toInt();
+    }
+  }
+
   return ModelInputTensor(
     tensor: tensor,
     letterbox: LetterboxInfo(
@@ -100,6 +132,9 @@ ModelInputTensor buildModelInputTensor(
       padXFrac: padX / inputSize,
       padYFrac: padY / inputSize,
     ),
+    contentRgb: contentRgb,
+    contentWidth: contentWidth,
+    contentHeight: contentHeight,
   );
 }
 
@@ -469,10 +504,11 @@ class RubikDetector {
     return _DecodedPose(detection: detection, keypoints: keypoints);
   }
 
-  /// Undoes the 90-degree clockwise rotation applied in
-  /// [buildModelInputTensor] (to match the model's training orientation),
-  /// then undoes the letterbox padding, to recover a coordinate normalized
-  /// against the original camera frame.
+  /// Undoes the rotation applied in [buildModelInputTensor] (`angle: 270`,
+  /// to match the model's training orientation), then undoes the letterbox
+  /// padding, to recover a coordinate normalized against the original camera
+  /// frame. This formula is the true inverse of a 270-degree copyRotate -
+  /// verified both algebraically and against the model's actual output.
   Offset _mapModelPointToFrame(double nx, double ny, LetterboxInfo lb) {
     final rotatedX = ny;
     final rotatedY = 1.0 - nx;

@@ -14,10 +14,10 @@ final Map<String, String> standardPLLAlgorithms = {
   "021210102333": "R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R", // F Perm
 
   // --- G Permutations ---
-  "031200211323": "R2 U R' U R' U' R U' R2 D U' R U' R' D'", // Ga Perm
-  "003122130103": "R' U' R U D' R2 U R' U R U' R U' R2 D", // Gb Perm
-  "210120132033": "R2 U' R U' R U R' U R2 D' U R' U R D'", // Gc Perm
-  "300102311123": "R U R' U' D R2 U' R U' R' U R' U R2 D'", // Gd Perm
+  "011230102323": "R2 U R' U R' U' R U' R2 U' D R' U R D'", // Ga Perm
+  "021200132313": "R' U' R U D' R2 U R' U R U' R U' R2 D", // Gb Perm
+  "021230112303": "R2 U' R U' R U R' U R2 U D' R U' R' D", // Gc Perm
+  "031220102313": "R U R' U' D R2 U' R U' R' U R' U R2 D'", // Gd Perm
 
   // --- H Permutation ---
   "020131202313": "M2 U M2 U2 M2 U M2", // H Perm
@@ -44,8 +44,10 @@ final Map<String, String> standardPLLAlgorithms = {
   // --- V Permutation ---
   "002321210133": "R' U R' U' B' R' B2 U' B' U B' R B R", // V Perm
 
-  // --- W Permutation ---
-  "231201311031": "R' U R' U' R' F R2 U' R' U R F' R", // W Perm
+  // --- Y Permutation ---
+  // (previously stored under the non-standard label "W" with a broken
+  // algorithm that didn't preserve F2L; the 21-name PLL set uses Y here)
+  "002311230123": "F R U' R' U' R U R' F' R U R' U' R' F R F'", // Y Perm
 
   // --- Z Permutation ---
   "010101232323": "M2 U M2 U M' U2 M2 U2 M' U2", // Z Perm

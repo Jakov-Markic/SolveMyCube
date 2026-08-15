@@ -5,175 +5,175 @@ import 'cfop.dart';
 // Hardcoded OLL patterns - these are the 57 known cases
 // Format: 21-character string (9 U face + 3 each from F,R,B,L top rows)
 final Map<String, String> standardOLLAlgorithms = {
-  // Case 1: "R U2 R2 F R F' U2 R' F R F'"
+  // Dot 1
   "000010000010111010111": "R U2 R2 F R F' U2 R' F R F'",
   
-  // Case 2: "F R U R' U' F' f R U R' U' f'"
+  // Dot 2
   "000010000011010110111": "F R U R' U' F' f R U R' U' f'",
   
-  // Case 3: "f R U R' U' f' U' F R U R' U' F'"
+  // Dot 3
   "000010001010011011011": "f R U R' U' f' U' F R U R' U' F'",
   
-  // Case 4: "f R U R' U' f' U F R U R' U' F'"
+  // Dot 4
   "001010000110110010110": "f R U R' U' f' U F R U R' U' F'",
   
-  // Case 5: "l' U2 L U L' U l"
+  // Square 1
   "110110000011011000001": "l' U2 L U L' U l",
   
-  // Case 6: "r U2 R' U' R U' r'"
+  // Square 2
   "011011000110100000110": "r U2 R' U' R U' r'",
   
-  // Case 7: "r U R' U R U2 r'"
+  // Small Lightning Bolt 1
   "010110100011011001000": "r U R' U R U2 r'",
   
-  // Case 8: "l' U' L U' L' U2 l"
+  // Small Lightning Bolt 2
   "010011001110000100110": "l' U' L U' L' U2 l",
   
-  // Case 9: "R U R' U' R' F R2 U R' U' F'"
+  // Fish 1
   "010110001110010100100": "R U R' U' R' F R2 U R' U' F'",
   
-  // Case 10: "R U R' U R' F R F' R U2 R'"
+  // Fish 2
   "001110010001010011001": "R U R' U R' F R F' R U2 R'",
   
-  // Case 11: "r U R' U R' F R F' R U2 r'"
+  // Small Lightning Bolt 3
   "011110000011010001001": "r U R' U R' F R F' R U2 r'",
   
-  // Case 12: "M' R' U' R U' R' U2 R U' R r'"
+  // Small Lightning Bolt 4
   "110011000110100100010": "M' R' U' R U' R' U2 R U' R r'",
   
-  // Case 13: "F U R U' R2 F' R U R U' R'"
+  // Knight Move 1
   "000111100011001011000": "F U R U' R2 F' R U R U' R'",
   
-  // Case 14: "R' F R U R' F' R F U' F'"
+  // Knight Move 2
   "000111001110000110100": "R' F R U R' F' R F U' F'",
   
-  // Case 15: "l' U' l L' U' L U l' U l"
+  // Knight Move 3
   "100111000011001010001": "l' U' l L' U' L U l' U l",
   
-  // Case 16: "r U r' R U R' U' r U' r'"
+  // Knight Move 4
   "001111000110100010100": "r U r' R U R' U' r U' r'",
   
-  // Case 17: "F R' F' R2 r' U R U' R' U' M'"
+  // Dot 5
   "100010001110011010010": "F R' F' R2 r' U R U' R' U' M'",
   
-  // Case 18: "r U R' U R U2 r2 U' R U' R' U2 r"
+  // Dot 6
   "101010000111010010010": "r U R' U R U2 r2 U' R U' R' U2 r",
   
-  // Case 19: "M' U' r U2 r' U' R U' R' M'"
-  "000000001100010100110": "M' U' r U2 r' U' R U' R' M'",
+  // Dot 7
+  "101010000010110010011": "r' R U R U R' U' M' R' F R F'",
   
-  // Case 20: "M U R U R' U' M2' U R U' r'"
-  "101010101010010010010": "M U R U R' U' M2' U R U' r'",
+  // Dot 8
+  "101010101010010010010": "M U R U R' U' M2 U R U' r'",
   
-  // Case 21: "R U2 R' U' R U R' U' R U' R'"
+  // OCLL 3
   "010111010101000101000": "R U2 R' U' R U R' U' R U' R'",
   
-  // Case 22: "R U2 R2 U' R2 U' R2 U2 R"
+  // OCLL 4
   "010111010001000100101": "R U2 R2 U' R2 U' R2 U2 R",
   
-  // Case 23: "R2 D' R U2 R' D R U2 R"
+  // OCLL 5 (Superman)
   "010111111000000101000": "R2 D' R U2 R' D R U2 R",
   
-  // Case 24: "r U R' U' r' F R F'"
+  // OCLL 6
   "011111011100000001000": "r U R' U' r' F R F'",
   
-  // Case 25: "F' r U R' U' r' F R"
+  // OCLL 7
   "011111110001000000100": "F' r U R' U' r' F R",
   
-  // Case 26: "R U2 R' U' R U' R'"
+  // OCLL 2 (Anti-Sune)
   "011111010100100000100": "R U2 R' U' R U' R'",
   
-  // Case 27: "R U R' U R U2 R'"
+  // OCLL 1 (Sune)
   "010111110001001001000": "R U R' U R U2 R'",
   
-  // Case 28: "r U R' U' r' R U R U' R'"
+  // Arrow
   "111110101010010000000": "r U R' U' r' R U R U' R'",
   
-  // Case 29: "R U R' U' R U' R' F' U' F R U R'"
+  // Awkward 1
   "011110001110010001000": "R U R' U' R U' R' F' U' F R U R'",
   
-  // Case 30: "F R' F R2 U' R' U' R U R' F2"
+  // Awkward 2
   "010110101010011000100": "F R' F R2 U' R' U' R U R' F2",
   
-  // Case 31: "R' U' F U R U' R' F' R"
+  // P Shape 1
   "011011001110000001010": "R' U' F U R U' R' F' R",
   
-  // Case 32: "L U F' U' L' U L F L'"
+  // P Shape 2
   "110110100011010100000": "L U F' U' L' U L F L'",
   
-  // Case 33: "R U R' U' R' F R F'"
+  // T Shape 1
   "001111001110000011000": "R U R' U' R' F R F'",
   
-  // Case 34: "R U R2 U' R' F R U R U' F'"
+  // C Shape 1
   "000111101010001010100": "R U R2 U' R' F R U R U' F'",
   
-  // Case 35: "R U2 R2 F R F' R U2 R'"
+  // Fish 3
   "100011011100001010010": "R U2 R2 F R F' R U2 R'",
   
-  // Case 36: "L' U' L U' L' U L U L F' L' F"
+  // W Shape 1
   "110011001010000100011": "L' U' L U' L' U L U L F' L' F",
   
-  // Case 37: "F R' F' R U R U' R'"
+  // Fish 4
   "110110001110011000000": "F R' F' R U R U' R'",
   
-  // Case 38: "R U R' U R U' R' U' R' F R F'"
+  // W Shape 2
   "011110100010110001000": "R U R' U R U' R' U' R' F R F'",
   
-  // Case 39: "L F' L' U' L U F U' L'"
+  // Big Lightning Bolt 1
   "001111100010100011000": "L F' L' U' L U F U' L'",
   
-  // Case 40: "R' F R U R' U' F' U R"
+  // Big Lightning Bolt 2
   "100111001010000110001": "R' F R U R' U' F' U R",
   
-  // Case 41: "R U R' U R U2 R' F R U R' U' F'"
+  // Awkward 3
   "010110101010010101000": "R U R' U R U2 R' F R U R' U' F'",
   
-  // Case 42: "R' U' R U' R' U2 R F R U R' U' F'"
+  // Awkward 4
   "101110010101010010000": "R' U' R U' R' U2 R F R U R' U' F'",
   
-  // Case 43: "F' U' L' U L F"
+  // P Shape 3
   "011011001010000000111": "F' U' L' U L F",
   
-  // Case 44: "F U R U' R' F'"
+  // P Shape 4
   "110110100010111000000": "F U R U' R' F'",
   
-  // Case 45: "F R U R' U' F'"
+  // T Shape 2
   "001111001010000010101": "F R U R' U' F'",
   
-  // Case 46: "R' U' R' F R F' U R"
+  // C Shape 2
   "110010110000111000010": "R' U' R' F R F' U R",
   
-  // Case 47: "R' U' R' F R F' R' F R F' U R"
+  // L Shape 1
   "010011000110101001010": "R' U' R' F R F' R' F R F' U R",
   
-  // Case 48: "F R U R' U' R U R' U' F'"
+  // L Shape 2
   "010110000011010100101": "F R U R' U' R U R' U' F'",
   
-  // Case 49: "r U' r2 U r2 U r2 U' r"
+  // L Shape 3
   "010011000011000100111": "r U' r2 U r2 U r2 U' r",
   
-  // Case 50: "r' U r2 U' r2 U' r2 U r'"
+  // L Shape 4
   "000011010001000110111": "r' U r2 U' r2 U' r2 U r'",
   
-  // Case 51: "F U R U' R' U R U' R' F'"
+  // I Shape 1
   "000111000110101011000": "F U R U' R' U R U' R' F'",
   
-  // Case 52: "R U R' U R U' B U' B' R'"
+  // I Shape 2
   "010010010100111001010": "R U R' U R U' B U' B' R'",
   
-  // Case 53: "l' U2 L U L' U' L U L' U l"
+  // L Shape 5
   "010011000111000101010": "l' U2 L U L' U' L U L' U l",
   
-  // Case 54: "r U2 R' U' R U R' U' R U' r'"
+  // L Shape 6
   "010110000111010101000": "r U2 R' U' R U R' U' R U' r'",
   
-  // Case 55: "R' F R U R U' R2 F' R2 U' R' U R U R'"
+  // I Shape 3
   "000111000111000111000": "R' F R U R U' R2 F' R2 U' R' U R U R'",
   
-  // Case 56: "r' U' r U' R' U R U' R' U R r' U r"
+  // I Shape 4
   "000111000010101010101": "r' U' r U' R' U R U' R' U R r' U r",
   
-  // Case 57: "R U R' U' M' U R U' r'"
+  // H Shape
   "101111101010000010000": "R U R' U' M' U R U' r'",
 };
 
