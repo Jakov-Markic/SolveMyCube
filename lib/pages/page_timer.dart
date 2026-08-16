@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
+/// Stopwatch for timing a solve, with a sweeping progress ring while running.
 class PageTimer extends StatefulWidget {
   const PageTimer({super.key});
 
@@ -17,6 +18,7 @@ class _PageTimerState extends State<PageTimer> with SingleTickerProviderStateMix
   Duration _elapsed = Duration.zero;
   bool _isRunning = false;
 
+  /// Starts the border-sweep animation controller and the 16ms elapsed-time tick.
   @override
   void initState() {
     super.initState();
@@ -35,6 +37,7 @@ class _PageTimerState extends State<PageTimer> with SingleTickerProviderStateMix
     });
   }
 
+  /// Cancels the tick timer and disposes the animation controller.
   @override
   void dispose() {
     _timer.cancel();
@@ -42,32 +45,7 @@ class _PageTimerState extends State<PageTimer> with SingleTickerProviderStateMix
     super.dispose();
   }
 
-  void _toggleTimer() {
-    setState(() {
-      _isRunning = !_isRunning;
-      if (_isRunning) {
-        _borderController.repeat(); // Starts or resumes rotation
-      } else {
-        _borderController.stop(); // Pauses rotation
-      }
-    });
-  }
-
-  void _resetTimer() {
-    setState(() {
-      _isRunning = false;
-      _elapsed = Duration.zero;
-      _borderController.reset(); // Resets animation back to 12 o'clock
-    });
-  }
-
-  String _formatDuration(Duration duration) {
-    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-    final milliseconds = (duration.inMilliseconds.remainder(1000) / 10).floor().toString().padLeft(2, '0');
-    return '$minutes:$seconds.$milliseconds';
-  }
-
+  /// Builds the sweeping-ring stopwatch face and the Start/Stop and Reset controls.
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -148,5 +126,39 @@ class _PageTimerState extends State<PageTimer> with SingleTickerProviderStateMix
         ),
       ),
     );
+  }
+
+  // ---------------------------------------------------------------------
+  // Implementation
+  // ---------------------------------------------------------------------
+
+  /// Toggles running state, starting or stopping the border-sweep animation
+  /// to match.
+  void _toggleTimer() {
+    setState(() {
+      _isRunning = !_isRunning;
+      if (_isRunning) {
+        _borderController.repeat(); // Starts or resumes rotation
+      } else {
+        _borderController.stop(); // Pauses rotation
+      }
+    });
+  }
+
+  /// Stops the timer and zeroes both the elapsed time and the sweep animation.
+  void _resetTimer() {
+    setState(() {
+      _isRunning = false;
+      _elapsed = Duration.zero;
+      _borderController.reset(); // Resets animation back to 12 o'clock
+    });
+  }
+
+  /// Formats [duration] as `mm:ss.cc`.
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final milliseconds = (duration.inMilliseconds.remainder(1000) / 10).floor().toString().padLeft(2, '0');
+    return '$minutes:$seconds.$milliseconds';
   }
 }

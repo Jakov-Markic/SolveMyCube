@@ -49,6 +49,7 @@ class _MainAppState extends State<MainApp> {
   late ThemeMode _themeMode;
   late String _selectedFontFamily;
   late String _selectedAlgorithm;
+  late bool _debugMode;
 
   @override
   void initState() {
@@ -56,6 +57,7 @@ class _MainAppState extends State<MainApp> {
     _themeMode = widget.initialSettings.themeMode;
     _selectedFontFamily = widget.initialSettings.fontFamily;
     _selectedAlgorithm = widget.initialSettings.algorithm;
+    _debugMode = widget.initialSettings.debugMode;
   }
 
   Future<void> _handleThemeModeChanged(ThemeMode mode) async {
@@ -79,6 +81,13 @@ class _MainAppState extends State<MainApp> {
     await widget.settingsStore.saveAlgorithm(algorithm);
   }
 
+  Future<void> _handleDebugModeChanged(bool enabled) async {
+    setState(() {
+      _debugMode = enabled;
+    });
+    await widget.settingsStore.saveDebugMode(enabled);
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -96,9 +105,11 @@ class _MainAppState extends State<MainApp> {
         themeMode: _themeMode,
         selectedFontFamily: _selectedFontFamily,
         selectedAlgorithm: _selectedAlgorithm,
+        debugMode: _debugMode,
         onThemeModeChanged: _handleThemeModeChanged,
         onFontFamilyChanged: _handleFontFamilyChanged,
         onAlgorithmChanged: _handleAlgorithmChanged,
+        onDebugModeChanged: _handleDebugModeChanged,
       ),
     );
   }
@@ -108,18 +119,22 @@ class MainScreen extends StatefulWidget {
   final ThemeMode themeMode;
   final String selectedFontFamily;
   final String selectedAlgorithm;
+  final bool debugMode;
   final Future<void> Function(ThemeMode) onThemeModeChanged;
   final Future<void> Function(String) onFontFamilyChanged;
   final Future<void> Function(String) onAlgorithmChanged;
+  final Future<void> Function(bool) onDebugModeChanged;
 
   const MainScreen({
     super.key,
     required this.themeMode,
     required this.selectedFontFamily,
     required this.selectedAlgorithm,
+    required this.debugMode,
     required this.onThemeModeChanged,
     required this.onFontFamilyChanged,
     required this.onAlgorithmChanged,
+    required this.onDebugModeChanged,
   });
 
   @override
@@ -140,9 +155,11 @@ class _MainScreen extends State<MainScreen> {
         themeMode: widget.themeMode,
         selectedFontFamily: widget.selectedFontFamily,
         selectedAlgorithm: widget.selectedAlgorithm,
+        debugMode: widget.debugMode,
         onThemeModeChanged: widget.onThemeModeChanged,
         onFontFamilyChanged: widget.onFontFamilyChanged,
         onAlgorithmChanged: widget.onAlgorithmChanged,
+        onDebugModeChanged: widget.onDebugModeChanged,
       ),
     ];
   }
@@ -152,14 +169,17 @@ class _MainScreen extends State<MainScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.themeMode != widget.themeMode ||
         oldWidget.selectedFontFamily != widget.selectedFontFamily ||
-        oldWidget.selectedAlgorithm != widget.selectedAlgorithm) {
+        oldWidget.selectedAlgorithm != widget.selectedAlgorithm ||
+        oldWidget.debugMode != widget.debugMode) {
       _pages[2] = page.PageSettings(
         themeMode: widget.themeMode,
         selectedFontFamily: widget.selectedFontFamily,
         selectedAlgorithm: widget.selectedAlgorithm,
+        debugMode: widget.debugMode,
         onThemeModeChanged: widget.onThemeModeChanged,
         onFontFamilyChanged: widget.onFontFamilyChanged,
         onAlgorithmChanged: widget.onAlgorithmChanged,
+        onDebugModeChanged: widget.onDebugModeChanged,
       );
     }
   }
