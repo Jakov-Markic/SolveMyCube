@@ -92,6 +92,7 @@ class _MainAppState extends State<MainApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [globalRouteObserver],
       themeMode: _themeMode,
       theme: AppTheme.buildTheme(
         brightness: Brightness.light,

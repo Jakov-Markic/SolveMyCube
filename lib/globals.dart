@@ -3,6 +3,14 @@ import 'package:flutter/material.dart';
 
 List<CameraDescription> globalCameras = [];
 
+/// App-wide route observer, registered on [MaterialApp.navigatorObservers].
+/// Lets any [RouteAware] widget know when it's been covered by a pushed
+/// route (`didPushNext`) or uncovered again (`didPopNext`) - used by
+/// [RubiksCube3D] to stop driving its GL surface while off-screen, since
+/// only one three_js render surface should be actively rendering at a time.
+final RouteObserver<ModalRoute<void>> globalRouteObserver =
+    RouteObserver<ModalRoute<void>>();
+
 class AppTheme {
   static ThemeData buildTheme({
     required Brightness brightness,

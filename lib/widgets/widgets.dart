@@ -10,3 +10,4 @@ export 'rubiks_face.dart';
 export 'color_picker_row.dart';
 export 'color_palette_dialog.dart';
 export 'cube_widget.dart';
+export 'rubiks_cube_3d.dart';
