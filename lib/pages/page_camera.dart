@@ -1,18 +1,22 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../cube_face.dart';
 import '../services/detector_service.dart';
 import '../services/cube_geometry.dart';
 import '../services/face_color_extractor.dart';
 import '../services/solve_pnp_service.dart';
+import '../widgets/widgets.dart';
 import 'page_manual_fill.dart';
 
-// A screen that allows users to take a picture using a given camera.
+/// Live camera capture screen for scanning a cube face: runs the detector on
+/// each preview frame, overlays the estimated cube geometry, and lets the
+/// user capture the currently-visible face's sticker colors into the
+/// selected slot of the F/R/U/B/L/D grid.
 class PageCamera extends StatefulWidget {
   final CameraDescription camera;
 
@@ -60,7 +64,10 @@ class PageCameraState extends State<PageCamera> {
   Duration _lastInferenceTime = Duration.zero;
   int _conversionFailures = 0;
   CubePoseAngles? _lastAngles;
+  bool _debugModeEnabled = false;
 
+  /// Starts the camera controller, begins streaming frames into the
+  /// detector, and kicks off a background model warmup.
   @override
   void initState() {
     super.initState();
@@ -85,8 +92,10 @@ class PageCameraState extends State<PageCamera> {
       });
     });
     unawaited(_warmupDetector());
+    unawaited(_loadDebugMode());
   }
 
+  /// Stops the frame stream and releases the camera controller and notifier.
   @override
   void dispose() {
     if (_controller.value.isStreamingImages) {
@@ -97,6 +106,267 @@ class PageCameraState extends State<PageCamera> {
     super.dispose();
   }
 
+  /// Builds the camera preview with the detection overlay, live status
+  /// panel, scanned-face preview, and capture/manual-fill controls.
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Scan Rubik\'s Cube'),
+        actions: [
+          if (_isProcessing)
+            const Padding(
+              padding: EdgeInsets.all(12.0),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            ),
+        ],
+      ),
+      body: FutureBuilder<void>(
+        future: _initializeControllerFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done) {
+            return Stack(
+              children: [
+                Positioned.fill(child: _buildCameraBackground()),
+                if (_cubeGeometry != null && _lastFrameSize != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: CubeGeometryPainter(
+                          geometry: _cubeGeometry!,
+                          sourceSize: _lastFrameSize!,
+                          rotationQuarterTurns: 1,
+                          detections: _lastDetections,
+                          primaryColor: Theme.of(context).colorScheme.primary,
+                          secondaryColor: Theme.of(context).colorScheme.secondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (_isStreaming)
+                  Positioned(
+                    top: 16,
+                    right: 16,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.videocam, color: Colors.white, size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            'Live',
+                            style: TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 16,
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_debugModeEnabled) ...[
+                          if (_detectionResult != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.78),
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text(
+                                    _detectionResult!,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  if (_cubeGeometry != null) ...[
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _cubeGeometry!.summary,
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 11,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _detectionSummary(),
+                                      style: const TextStyle(
+                                        color: Colors.white60,
+                                        fontSize: 11,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _debugSummary(),
+                                    style: const TextStyle(
+                                      color: Colors.white60,
+                                      fontSize: 10,
+                                      height: 1.2,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ] else if (_detectionResult != null)
+                          Text(
+                            _detectionResult!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Card(
+                                margin: EdgeInsets.zero,
+                                color: Colors.white,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Scanned face: ${_selectedFace.label}',
+                                        style: const TextStyle(
+                                          color: Colors.black87,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children: [
+                                          IgnorePointer(
+                                            child: RubiksGridView(
+                                              allFaces: _scannedFaces,
+                                              selectedFace: _selectedFace,
+                                              selectedColor: Colors.grey,
+                                              cellsRemainingNotifier:
+                                                  _cellsRemainingNotifier,
+                                              isRubikComplete: (_) {},
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          RubikFaceSelector(
+                                            selectedFace: _selectedFace,
+                                            onFaceChanged: (face) => setState(() {
+                                              _selectedFace = face;
+                                            }),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 60,
+                                  height: 60,
+                                  child: FloatingActionButton(
+                                    heroTag: 'capture-face',
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.secondary,
+                                    foregroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.onSecondary,
+                                    onPressed: _lastPoseResult != null
+                                        ? _captureCurrentFace
+                                        : null,
+                                    child: const Icon(Icons.camera_alt),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: 60,
+                                  height: 60,
+                                  child: FloatingActionButton(
+                                    heroTag: 'switch-to-manual',
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    foregroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimary,
+                                    onPressed: _openManualFill,
+                                    child: const Icon(Icons.switch_camera),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          } else {
+            // Otherwise, display a loading indicator.
+            return const Center(child: CircularProgressIndicator());
+          }
+        },
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Implementation
+  // ---------------------------------------------------------------------
+
+  /// Preloads the detector's model so the first real frame doesn't pay the
+  /// load-time cost. Failures are swallowed; inference still attempts
+  /// on-demand.
   Future<void> _warmupDetector() async {
     try {
       await _detector.preloadModel();
@@ -105,6 +375,21 @@ class PageCameraState extends State<PageCamera> {
     }
   }
 
+  /// Reads the user's saved camera-debug-info preference (set on
+  /// [PageSettings]) so the debug panel only renders when opted in.
+  Future<void> _loadDebugMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = prefs.getBool('camera_debug_mode') ?? false;
+    if (!mounted) return;
+    setState(() {
+      _debugModeEnabled = enabled;
+    });
+  }
+
+  /// Per-frame pipeline: rate-limits and dark-frame-gates incoming frames,
+  /// converts the raw camera frame to model input off the UI isolate, runs
+  /// cube pose detection, smooths the result, and updates all the derived UI
+  /// state (detection summary, geometry overlay, debug panel).
   Future<void> _onCameraFrame(CameraImage image) async {
     if (_isProcessing || !_isStreaming) {
       return;
@@ -253,6 +538,8 @@ class PageCameraState extends State<PageCamera> {
     }
   }
 
+  /// Averages the last [_maxDetectionHistory] raw detections into a single
+  /// smoothed detection, so the on-screen box doesn't jitter frame-to-frame.
   List<DetectionResult> _smoothDetections(List<DetectionResult> results) {
     if (results.isEmpty) {
       _detectionHistory.clear();
@@ -289,6 +576,9 @@ class PageCameraState extends State<PageCamera> {
     ];
   }
 
+  /// Exponentially blends [current] toward the previous pose result to damp
+  /// per-frame jitter in the ROI and keypoints, unless the ROI jumped too far
+  /// on a low-confidence frame (treated as a real cut, not noise).
   CubePoseResult? _smoothPoseResult(CubePoseResult? current) {
     if (current == null) {
       return null;
@@ -358,8 +648,12 @@ class PageCameraState extends State<PageCamera> {
     );
   }
 
+  /// Linear interpolation between [a] and [b] by fraction [t].
   double _lerp(double a, double b, double t) => a + (b - a) * t;
 
+  /// Flattens a [CameraImage]'s planes into a plain `Map` so the frame can be
+  /// handed to [_convertSerializedFrameToModelInput] via [compute] (isolate
+  /// message passing requires simple, transferable data).
   Map<String, Object> _serializeCameraImage(
     CameraImage image, {
     required int targetLongSide,
@@ -383,6 +677,9 @@ class PageCameraState extends State<PageCamera> {
     };
   }
 
+  /// Cheaply estimates whether [image] is too dark to bother running the
+  /// detector on, by sampling brightness across a sparse grid of pixels
+  /// rather than decoding the whole frame.
   bool _frameLooksDark(CameraImage image) {
     if (image.planes.isEmpty) {
       return false;
@@ -475,6 +772,8 @@ class PageCameraState extends State<PageCamera> {
     });
   }
 
+  /// Pushes [PageManualFill], seeded with whatever faces have been scanned
+  /// so far, so the user can review or hand-correct the capture.
   Future<void> _openManualFill() async {
     if (!mounted) return;
 
@@ -486,6 +785,7 @@ class PageCameraState extends State<PageCamera> {
     );
   }
 
+  /// Renders the raw camera preview, cropped to fill its box.
   Widget _buildCameraBackground() {
     final previewSize = _controller.value.previewSize;
     if (previewSize == null) {
@@ -503,6 +803,8 @@ class PageCameraState extends State<PageCamera> {
     );
   }
 
+  /// One-line summary of the current detections' confidence and pose status,
+  /// shown under the main detection result text.
   String _detectionSummary() {
     if (_lastDetections.isEmpty) {
       return 'AI detections: 0';
@@ -520,6 +822,8 @@ class PageCameraState extends State<PageCamera> {
       'kpt $visibleCount/8  pnp ${pnpReady ? 'ready' : 'pending'}';
   }
 
+  /// Multi-line debug panel text: model timing, active model asset, pose
+  /// solver status, and the last error (if any).
   String _debugSummary() {
     final confidence = (_detectorDebug.confidence * 100).toStringAsFixed(0);
     final convertMs = _lastConversionTime.inMilliseconds;
@@ -541,299 +845,11 @@ class PageCameraState extends State<PageCamera> {
     return 'confidence $confidence%  convert ${convertMs}ms  infer ${inferMs}ms  $slowTag\n'
       'model $activeModel  $poseStatus\n$angleText$errorText';
   }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Scan Rubik\'s Cube'),
-        actions: [
-          if (_isProcessing)
-            const Padding(
-              padding: EdgeInsets.all(12.0),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-            ),
-        ],
-      ),
-      body: FutureBuilder<void>(
-        future: _initializeControllerFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done) {
-            return Stack(
-              children: [
-                Positioned.fill(child: _buildCameraBackground()),
-                if (_cubeGeometry != null && _lastFrameSize != null)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: CustomPaint(
-                        painter: CubeGeometryPainter(
-                          geometry: _cubeGeometry!,
-                          sourceSize: _lastFrameSize!,
-                          rotationQuarterTurns: 1,
-                          detections: _lastDetections,
-                          primaryColor: Theme.of(context).colorScheme.primary,
-                          secondaryColor: Theme.of(context).colorScheme.secondary,
-                        ),
-                      ),
-                    ),
-                  ),
-                if (_isStreaming)
-                  Positioned(
-                    top: 16,
-                    right: 16,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.videocam, color: Colors.white, size: 16),
-                          SizedBox(width: 6),
-                          Text(
-                            'Live',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 16,
-                  child: SafeArea(
-                    top: false,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (_detectionResult != null)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.78),
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.08),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(
-                                  _detectionResult!,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                if (_cubeGeometry != null) ...[
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    _cubeGeometry!.summary,
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 11,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _detectionSummary(),
-                                    style: const TextStyle(
-                                      color: Colors.white60,
-                                      fontSize: 11,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                                const SizedBox(height: 4),
-                                Text(
-                                  _debugSummary(),
-                                  style: const TextStyle(
-                                    color: Colors.white60,
-                                    fontSize: 10,
-                                    height: 1.2,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Card(
-                                margin: EdgeInsets.zero,
-                                color: Colors.white,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(10),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        'Scanned face: ${_selectedFace.label}',
-                                        style: const TextStyle(
-                                          color: Colors.black87,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.center,
-                                        children: [
-                                          IgnorePointer(
-                                            child: RubiksGridView(
-                                              allFaces: _scannedFaces,
-                                              selectedFace: _selectedFace,
-                                              selectedColor: Colors.grey,
-                                              cellsRemainingNotifier:
-                                                  _cellsRemainingNotifier,
-                                              isRubikComplete: (_) {},
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          RubikFaceSelector(
-                                            selectedFace: _selectedFace,
-                                            onFaceChanged: (face) => setState(() {
-                                              _selectedFace = face;
-                                            }),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SizedBox(
-                                  width: 60,
-                                  height: 60,
-                                  child: FloatingActionButton(
-                                    heroTag: 'capture-face',
-                                    backgroundColor: Theme.of(
-                                      context,
-                                    ).colorScheme.secondary,
-                                    foregroundColor: Theme.of(
-                                      context,
-                                    ).colorScheme.onSecondary,
-                                    onPressed: _lastPoseResult != null
-                                        ? _captureCurrentFace
-                                        : null,
-                                    child: const Icon(Icons.camera_alt),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                SizedBox(
-                                  width: 60,
-                                  height: 60,
-                                  child: FloatingActionButton(
-                                    heroTag: 'switch-to-manual',
-                                    backgroundColor: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                    foregroundColor: Theme.of(
-                                      context,
-                                    ).colorScheme.onPrimary,
-                                    onPressed: _openManualFill,
-                                    child: const Icon(Icons.switch_camera),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            );
-          } else {
-            // Otherwise, display a loading indicator.
-            return const Center(child: CircularProgressIndicator());
-          }
-        },
-      ),
-    );
-  }
 }
 
-// A widget that displays the picture taken by the user.
-class DisplayPictureScreen extends StatelessWidget {
-  final String imagePath;
-  final String? detectionResult; // Add this parameter
-
-  const DisplayPictureScreen({
-    super.key,
-    required this.imagePath,
-    this.detectionResult,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Detection Result')),
-      body: Column(
-        children: [
-          Expanded(child: Image.file(File(imagePath))),
-          // Show detection results
-          if (detectionResult != null)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              color: Colors.black87,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Results:',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    detectionResult!,
-                    style: const TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
+/// Converts a serialized camera frame (see [PageCameraState._serializeCameraImage])
+/// into a letterboxed model input tensor, handling both BGRA (iOS) and
+/// YUV420 (Android) plane layouts. Runs off the UI isolate via [compute].
 ModelInputTensor _convertSerializedFrameToModelInput(Map<String, Object> frame) {
   try {
     final sourceWidth = frame['width']! as int;
@@ -962,6 +978,7 @@ ModelInputTensor _convertSerializedFrameToModelInput(Map<String, Object> frame) 
   }
 }
 
+/// Clamps [value] into the valid `0..255` byte range.
 int _clampToByte(int value) {
   if (value < 0) return 0;
   if (value > 255) return 255;

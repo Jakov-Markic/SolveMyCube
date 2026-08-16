@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import './page_manual_fill.dart';
-import '../algorithms/cfop/cfop.dart';
-import '../algorithms/kociemba/kociemba.dart';
-import '../algorithms/thistlethwaite/thistlethwaite.dart';
+import '../algorithms/algorithms.dart';
+import '../widgets/widgets.dart';
 
 typedef SolverFunction = String Function(List<List<List<Color>>> faces);
 
+/// Solution walkthrough: runs the selected solver against the captured cube,
+/// then lets the user step forward/backward through the resulting moves
+/// while watching the cube state update at each step.
 class PageSolution extends StatefulWidget {
   final List<List<List<Color>>> cubeFaces;
   final String? algorithm;
@@ -38,6 +39,7 @@ class _PageSolutionState extends State<PageSolution> {
     'thistlethwaite': solveThistlethwaite,
   };
 
+  /// Snapshots [PageSolution.cubeFaces] and starts solving in the background.
   @override
   void initState() {
     super.initState();
@@ -46,6 +48,8 @@ class _PageSolutionState extends State<PageSolution> {
     _loadSolution();
   }
 
+  /// Builds the step controls, move list, and the cube state preview for
+  /// [_currentStep].
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -182,6 +186,12 @@ class _PageSolutionState extends State<PageSolution> {
     );
   }
 
+  // ---------------------------------------------------------------------
+  // Implementation
+  // ---------------------------------------------------------------------
+
+  /// Replays moves `0..step` from [_initialFaces] and returns the resulting
+  /// cube state, or the untouched initial state at step 0.
   List<List<List<Color?>>> _getFacesAtStep(int step) {
     if (step == 0 || _moves.isEmpty) {
       return _toNullableFaces(_initialFaces);
@@ -190,26 +200,29 @@ class _PageSolutionState extends State<PageSolution> {
     // Apply moves up to the current step
     var currentFaces = _cloneFaces(_initialFaces);
     final cube = RubiksCube(currentFaces);
-    
+
     for (int i = 0; i < step; i++) {
       cube.executeSequence(_moves[i]);
     }
-    
+
     return _toNullableFaces(cube.grid);
   }
 
+  /// Resolves the algorithm to use (explicit widget param, else the user's
+  /// saved preference), runs its solver against the captured faces, and
+  /// parses the resulting move sequence into [_moves].
   Future<void> _loadSolution() async {
     // Get the algorithm name and convert to lowercase
     final rawAlgorithm = widget.algorithm ?? await _loadSelectedAlgorithm();
     final algorithmKey = rawAlgorithm.toLowerCase();
-    
+
     // Get the solver function from the map
     final solver = _solverMap[algorithmKey] ?? solveCfop;
-    
+
     // Clone the faces and solve
     final solverFaces = _cloneFaces(widget.cubeFaces);
     final solution = solver(solverFaces);
-    
+
     // Parse moves
     final moves = solution
         .trim()
@@ -225,17 +238,21 @@ class _PageSolutionState extends State<PageSolution> {
     });
   }
 
+  /// Reads the user's saved solver preference, defaulting to CFOP.
   Future<String> _loadSelectedAlgorithm() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('algorithm') ?? 'CFOP';
   }
 
+  /// Deep-copies a `[face][row][col]` color grid.
   List<List<List<Color>>> _cloneFaces(List<List<List<Color>>> faces) {
     return faces
         .map((face) => face.map((row) => row.toList()).toList())
         .toList();
   }
 
+  /// Widens a non-nullable color grid to the nullable form [RubiksGridView]
+  /// expects.
   List<List<List<Color?>>> _toNullableFaces(List<List<List<Color>>> faces) {
     return faces
         .map((face) => face.map((row) => row.map<Color?>((cell) => cell).toList()).toList())

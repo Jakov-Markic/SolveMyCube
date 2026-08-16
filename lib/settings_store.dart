@@ -5,11 +5,13 @@ class AppSettings {
   final ThemeMode themeMode;
   final String fontFamily;
   final String algorithm;
+  final bool debugMode;
 
   const AppSettings({
     required this.themeMode,
     required this.fontFamily,
     required this.algorithm,
+    required this.debugMode,
   });
 }
 
@@ -21,16 +23,19 @@ class SettingsStore {
   static const String _themeKey = 'theme_mode';
   static const String _fontKey = 'font_family';
   static const String _algorithmKey = 'algorithm';
+  static const String _debugModeKey = 'camera_debug_mode';
 
   AppSettings loadSettings() {
     final themeName = _prefs.getString(_themeKey);
     final fontFamily = _prefs.getString(_fontKey) ?? 'Roboto';
     final algorithm = _prefs.getString(_algorithmKey) ?? 'CFOP';
+    final debugMode = _prefs.getBool(_debugModeKey) ?? false;
 
     return AppSettings(
       themeMode: themeName == 'dark' ? ThemeMode.dark : ThemeMode.light,
       fontFamily: fontFamily,
       algorithm: algorithm,
+      debugMode: debugMode,
     );
   }
 
@@ -44,5 +49,9 @@ class SettingsStore {
 
   Future<void> saveAlgorithm(String algorithm) async {
     await _prefs.setString(_algorithmKey, algorithm);
+  }
+
+  Future<void> saveDebugMode(bool enabled) async {
+    await _prefs.setBool(_debugModeKey, enabled);
   }
 }
