@@ -26,6 +26,10 @@ class _PageSettingsState extends State<PageSettings> {
   final List<String> _fontFamilies = ['Roboto', 'Courier', 'Times New Roman', 'sans-serif'];
   final List<String> _algorithms = ['CFOP', 'Kociemba', 'Thistlethwaite'];
 
+  // Only CFOP is implemented right now; the others are listed so people know
+  // they're coming, but picking one just bounces with a toast.
+  static const Set<String> _availableAlgorithms = {'CFOP'};
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -80,14 +84,22 @@ class _PageSettingsState extends State<PageSettings> {
                       .map(
                         (algorithm) => DropdownMenuItem(
                           value: algorithm,
-                          child: Text(algorithm),
+                          child: Opacity(
+                            opacity: _availableAlgorithms.contains(algorithm) ? 1.0 : 0.4,
+                            child: Text(algorithm),
+                          ),
                         ),
                       )
                       .toList(),
                   onChanged: (value) async {
-                    if (value != null) {
-                      await widget.onAlgorithmChanged(value);
+                    if (value == null) return;
+                    if (!_availableAlgorithms.contains(value)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('$value is not currently available.')),
+                      );
+                      return;
                     }
+                    await widget.onAlgorithmChanged(value);
                   },
                 ),
               ),

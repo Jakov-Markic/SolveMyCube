@@ -2,10 +2,17 @@ import 'package:flutter/material.dart';
 import '../cube_face.dart';
 import './page_solution.dart';
 
-/// Kept as the historical name for the app's fixed color palette (indices
-/// match [Face.values] order: F,R,U,B,L,D); sourced from [kFaceColorList] so
-/// there's a single place that defines the F/R/U/B/L/D <-> color mapping.
-final defaultColorValue = kFaceColorList;
+/// Alternate shades for each of the 6 default sticker colors, offered
+/// alongside [kFaceColorList] in the palette editor since different cube
+/// brands commonly ship with slightly different reds/oranges/greens/etc.
+const List<Color> kAlternateColorList = [
+  Colors.pink,
+  Colors.lightBlue,
+  Color(0xFFE0E0E0),
+  Colors.deepOrange,
+  Colors.teal,
+  Colors.amber,
+];
 
 class PageManualFill extends StatefulWidget{
   final List<List<List<Color?>>>? initialCubeFaces;
@@ -18,7 +25,8 @@ class PageManualFill extends StatefulWidget{
 
 class _PageManualFillState extends State<PageManualFill> {
 
-  Color _selectedColor = defaultColorValue[0];
+  late List<Color> _activeColors;
+  late Color _selectedColor;
   bool _isComplete = false;
   Face _selectedFace = Face.F;
 
@@ -28,6 +36,8 @@ class _PageManualFillState extends State<PageManualFill> {
   @override
   void initState() {
     super.initState();
+    _activeColors = List<Color>.from(kFaceColorList);
+    _selectedColor = _activeColors[0];
     _allFaces = _createFaces(widget.initialCubeFaces);
     final counts = _initialRemainingCounts(_allFaces);
     _cellsRemainingNotifier = ValueNotifier(counts);
@@ -64,8 +74,8 @@ class _PageManualFillState extends State<PageManualFill> {
     return faces;
   }
 
-  /// Remaining allowance per color (index matches [defaultColorValue]/
-  /// [Face.values] order). A real cube has exactly 9 stickers of each color,
+  /// Remaining allowance per color (index matches [_activeColors] order).
+  /// A real cube has exactly 9 stickers of each color,
   /// so this can go *negative* - e.g. -3 means 3 too many were placed (most
   /// often from a misclassified auto-capture) - which is intentional: it's
   /// what lets [_PageManualFillState._isComplete] require an exact 9-per-color
@@ -78,7 +88,7 @@ class _PageManualFillState extends State<PageManualFill> {
         for (int col = 0; col < 3; col++) {
           final color = faces[faceIndex][row][col];
           if (color == null) continue;
-          final index = defaultColorValue.indexOf(color);
+          final index = _activeColors.indexOf(color);
           if (index >= 0) {
             counts[index] = counts[index] - 1;
           }
@@ -87,7 +97,35 @@ class _PageManualFillState extends State<PageManualFill> {
     }
     return counts;
   }
-  
+
+  /// Opens the palette editor and, if the user confirms a new 6-color
+  /// selection, applies it. Since a painted cell's meaning is tied to which
+  /// color represents which face, changing the palette invalidates any
+  /// existing capture - so the grid is cleared rather than left holding
+  /// colors that may no longer be selectable.
+  Future<void> _openColorEditor() async {
+    final newPalette = await showDialog<List<Color>>(
+      context: context,
+      builder: (context) => ColorPaletteDialog(initialSelection: _activeColors),
+    );
+
+    if (newPalette == null) return;
+
+    setState(() {
+      _activeColors = newPalette;
+      _selectedColor = _activeColors[0];
+      for (final face in _allFaces) {
+        for (final row in face) {
+          for (int col = 0; col < row.length; col++) {
+            row[col] = null;
+          }
+        }
+      }
+      _cellsRemainingNotifier.value = List<int>.filled(6, 9);
+      _isComplete = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     // TODO: implement build
@@ -111,6 +149,7 @@ class _PageManualFillState extends State<PageManualFill> {
           ),
           RubiksFace(
             selectedColor: _selectedColor,
+            activeColors: _activeColors,
             allFaces: _allFaces,
             cellsRemainingNotifier: _cellsRemainingNotifier,
             selectedFace: _selectedFace,
@@ -124,10 +163,13 @@ class _PageManualFillState extends State<PageManualFill> {
             },
           ),
           ColorPickerRow(
+            activeColors: _activeColors,
+            selectedColor: _selectedColor,
             cellsRemainingNotifier: _cellsRemainingNotifier,
             onColorSelected: (color)=>setState(() {
               _selectedColor = color;
-            })
+            }),
+            onEditPressed: _openColorEditor,
           ),
           const Divider(
             color: Colors.black87,
@@ -160,55 +202,57 @@ class _PageManualFillState extends State<PageManualFill> {
   }
 }
 
-class ColorPickerRow extends StatefulWidget {
+/// Fully controlled by [selectedColor]/[onColorSelected] - which tile is
+/// highlighted is derived from the current color rather than tracked as
+/// separate internal state, so the row stays in sync when [activeColors] is
+/// replaced by the palette editor (e.g. no stale "selected index 2" pointing
+/// at a color that's no longer in the palette).
+class ColorPickerRow extends StatelessWidget {
+  final List<Color> activeColors;
+  final Color selectedColor;
   final ValueChanged<Color> onColorSelected;
+  final VoidCallback onEditPressed;
   final ValueNotifier<List<int>> cellsRemainingNotifier;
 
   const ColorPickerRow({
-    super.key, 
+    super.key,
+    required this.activeColors,
+    required this.selectedColor,
     required this.onColorSelected,
+    required this.onEditPressed,
     required this.cellsRemainingNotifier,
   });
-
-  @override
-  State<ColorPickerRow> createState() => _ColorPickerRowState();
-}
-
-class _ColorPickerRowState extends State<ColorPickerRow> {
-  int selectedIndex = 1;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: 90,
       child: ValueListenableBuilder(
-        valueListenable: widget.cellsRemainingNotifier, 
+        valueListenable: cellsRemainingNotifier,
         builder: (context, cellsRemaining, _){
          return ListView.separated(
           padding: EdgeInsets.all(16),
           scrollDirection: Axis.horizontal,
-          itemCount: defaultColorValue.length + 1,
+          itemCount: activeColors.length + 1,
           separatorBuilder: (_, _) => const SizedBox(width: 8),
           itemBuilder: (context, index) {
             if(index == 0){
               return SizedBox(
                 width: 48,
                 child: IconButton(
-                  onPressed: ()=>{}, 
+                  onPressed: onEditPressed,
                   icon: Icon(Icons.edit),
               ));
             }
+            final color = activeColors[index - 1];
             return Align(
               alignment: Alignment.center,
               child: ColorPickerTile(
-                colorValue: defaultColorValue[index - 1],
-                width: 48, 
+                colorValue: color,
+                width: 48,
                 height: 48,
-                selected: selectedIndex == index,
-                onTap: () => setState(() {
-                  selectedIndex = index;
-                  widget.onColorSelected(defaultColorValue[index - 1]);
-                }),
+                selected: color == selectedColor,
+                onTap: () => onColorSelected(color),
                 numberOfCellsRemaining: cellsRemaining[index - 1],
               )
             );
@@ -287,6 +331,7 @@ class ColorPickerTile extends StatelessWidget {
 /// parent had no way to know or drive which face was being edited).
 class RubiksFace extends StatelessWidget{
   final Color selectedColor;
+  final List<Color>? activeColors;
   final List<List<List<Color?>>> allFaces;
   final ValueNotifier<List<int>> cellsRemainingNotifier;
   final Face selectedFace;
@@ -297,6 +342,7 @@ class RubiksFace extends StatelessWidget{
   const RubiksFace({
     super.key,
     required this.selectedColor,
+    this.activeColors,
     required this.isRubikComplete,
     required this.allFaces,
     required this.cellsRemainingNotifier,
@@ -314,6 +360,7 @@ class RubiksFace extends StatelessWidget{
           allFaces: allFaces,
           selectedFace: selectedFace,
           selectedColor: selectedColor,
+          activeColors: activeColors,
           cellsRemainingNotifier: cellsRemainingNotifier,
           isRubikComplete: isRubikComplete,
         ),
@@ -332,14 +379,19 @@ class RubiksGridView extends StatefulWidget{
   final List<List<List<Color?>>> allFaces;
   final Face selectedFace;
   final Color selectedColor;
+  // Nullable so callers that only render a read-only preview (e.g.
+  // PageSolution's step-through view, which wraps this in IgnorePointer and
+  // never paints) don't need to know about the manual-fill palette editor.
+  final List<Color>? activeColors;
   final Function(bool value) isRubikComplete;
   final ValueNotifier<List<int>> cellsRemainingNotifier;
 
   const RubiksGridView({
-    super.key, 
+    super.key,
     required this.allFaces,
     required this.selectedFace,
     required this.selectedColor,
+    this.activeColors,
     required this.cellsRemainingNotifier,
     required this.isRubikComplete,
   });
@@ -350,25 +402,27 @@ class RubiksGridView extends StatefulWidget{
 
 class StateRubikGridView extends State<RubiksGridView>{
 
+  List<Color> get _palette => widget.activeColors ?? kFaceColorList;
+
   void _paintCell(int row, int col) {
   final oldColor = widget.allFaces[widget.selectedFace.index][row][col];
-  
+
   final colorToApply = (widget.selectedColor == oldColor) ? null : widget.selectedColor;
 
   if (colorToApply == null && oldColor == null) return;
 
-  final newIndex = colorToApply != null ? defaultColorValue.indexOf(colorToApply) : -1;
+  final newIndex = colorToApply != null ? _palette.indexOf(colorToApply) : -1;
   final remaining = widget.cellsRemainingNotifier.value;
-  
+
   //Check if out of color
-  if (newIndex != -1 && remaining[newIndex] <= 0) return; 
+  if (newIndex != -1 && remaining[newIndex] <= 0) return;
 
   //Update UI
   setState(() {
     widget.allFaces[widget.selectedFace.index][row][col] = colorToApply;
   });
 
-  final oldIndex = oldColor != null ? defaultColorValue.indexOf(oldColor) : -1;
+  final oldIndex = oldColor != null ? _palette.indexOf(oldColor) : -1;
   final updated = List<int>.from(widget.cellsRemainingNotifier.value);
   
   //Update color numbering
@@ -459,6 +513,145 @@ class RubikFaceSelector extends StatelessWidget{
                 ),
               ),
             ),
+          ),
+        );
+      }).toList(growable: false),
+    );
+  }
+}
+
+/// Lets the user pick exactly 6 sticker colors from a 12-color pool (the 6
+/// current colors plus 6 common alternates), shown as two rows of 6. Pops
+/// the chosen colors (in pool order) on confirm, or null on cancel.
+class ColorPaletteDialog extends StatefulWidget {
+  final List<Color> initialSelection;
+
+  const ColorPaletteDialog({super.key, required this.initialSelection});
+
+  @override
+  State<ColorPaletteDialog> createState() => _ColorPaletteDialogState();
+}
+
+class _ColorPaletteDialogState extends State<ColorPaletteDialog> {
+  static const int _requiredCount = 6;
+  static final List<Color> _pool = [...kFaceColorList, ...kAlternateColorList];
+
+  late final Set<Color> _selected = {...widget.initialSelection};
+
+  void _toggle(Color color) {
+    setState(() {
+      if (_selected.contains(color)) {
+        _selected.remove(color);
+      } else if (_selected.length < _requiredCount) {
+        _selected.add(color);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isValid = _selected.length == _requiredCount;
+
+    return AlertDialog(
+      title: const Text("Choose 6 colors"),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "${_selected.length} / $_requiredCount selected",
+              style: TextStyle(
+                color: isValid ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text("Current", style: theme.textTheme.labelMedium),
+            const SizedBox(height: 4),
+            _PaletteRow(
+              colors: _pool.sublist(0, 6),
+              selected: _selected,
+              onTap: _toggle,
+            ),
+            const SizedBox(height: 12),
+            Text("Alternatives", style: theme.textTheme.labelMedium),
+            const SizedBox(height: 4),
+            _PaletteRow(
+              colors: _pool.sublist(6, 12),
+              selected: _selected,
+              onTap: _toggle,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text("Cancel"),
+        ),
+        ElevatedButton(
+          onPressed: isValid
+              ? () => Navigator.of(context).pop(
+                    _pool.where(_selected.contains).toList(),
+                  )
+              : null,
+          child: const Text("Confirm"),
+        ),
+      ],
+    );
+  }
+}
+
+class _PaletteRow extends StatelessWidget {
+  final List<Color> colors;
+  final Set<Color> selected;
+  final ValueChanged<Color> onTap;
+
+  const _PaletteRow({
+    required this.colors,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: colors.map((color) {
+        final isSelected = selected.contains(color);
+        return GestureDetector(
+          onTap: () => onTap(color),
+          child: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected ? Theme.of(context).colorScheme.primary : Colors.black45,
+                width: isSelected ? 3 : 1,
+              ),
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                        blurRadius: 4,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: isSelected
+                ? Icon(
+                    Icons.check,
+                    size: 18,
+                    color: ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+                        ? Colors.white
+                        : Colors.black,
+                  )
+                : null,
           ),
         );
       }).toList(growable: false),
