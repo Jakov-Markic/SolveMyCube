@@ -10,18 +10,13 @@ import '../globals.dart';
 /// (the fully-hidden center cubie is skipped) rather than a single imported
 /// model file - each cubie is a dark plastic body plus up to 3 colored
 /// sticker planes on its exposed faces. That per-cubie, per-sticker
-/// structure is what a static imported 3D asset can't give you: it's what
-/// will let a later change recolor individual stickers (from the app's
-/// existing `[face][row][col]` color grid) and animate a single layer
-/// turning, instead of only ever showing one fixed, solved-looking model.
+/// structure is what a static imported 3D asset can't give you: each
+/// sticker is its own mesh with its own material, so it can be recolored
+/// independently from the app's existing `[face][row][col]` color grid.
 ///
 /// Rendered with `three_js` (a Dart port of three.js) since it exposes a
 /// real scene graph - runtime mesh/material creation and per-object
 /// transforms - rather than just a glTF/OBJ viewer.
-///
-/// Colors are currently fixed to the app's default solved-cube palette
-/// ([kFaceColors]); wiring this up to a live, paintable color grid is a
-/// follow-up.
 class RubiksCube3D extends StatefulWidget {
   /// Side length, in logical pixels, of the (square) render surface.
   ///
@@ -33,7 +28,18 @@ class RubiksCube3D extends StatefulWidget {
   /// box the caller actually places it in.
   final double size;
 
-  const RubiksCube3D({super.key, this.size = 320});
+  /// Sticker colors, indexed `[face][row][col]` - the same shape and
+  /// convention used by [RubiksGridView] and [RubiksCube.grid]. A null cell
+  /// renders as an "unpainted" neutral sticker; a null `faces` entirely
+  /// renders the default solved-cube palette ([FaceX.defaultColor]).
+  ///
+  /// Read fresh every frame (not just once, or only when this widget is
+  /// rebuilt) - see [_syncStickerColors] - so painting directly into a
+  /// still-mounted `List` (as the manual-fill grid does) shows up without
+  /// needing the caller to force a rebuild.
+  final List<List<List<Color?>>>? faces;
+
+  const RubiksCube3D({super.key, this.size = 320, this.faces});
 
   @override
   State<RubiksCube3D> createState() => _RubiksCube3DState();
@@ -48,8 +54,18 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
   /// render-surface size.
   static int _instanceCount = 0;
 
-  late final three.ThreeJS _threeJs;
-  late final three.OrbitControls _controls;
+  /// A neutral "unpainted sticker" color, matching the look of an empty
+  /// cell in [RubiksGridView] (`surfaceContainerHighest`-ish), shown when
+  /// [RubiksCube3D.faces] is provided but a specific cell is still null.
+  static const int _emptyStickerHex = 0x30414c;
+
+  late three.ThreeJS _threeJs;
+  late three.OrbitControls _controls;
+
+  /// Sticker materials, indexed `[face.index][row][col]` - one per sticker,
+  /// so each of the 54 stickers can be recolored independently without
+  /// rebuilding any geometry.
+  late List<List<List<three.Material>>> _stickerMaterials;
 
   /// Cube axis convention used to place stickers: U/D = +Y/-Y, F/B = +Z/-Z,
   /// R/L = +X/-X (a standard right-handed "solver's-eye" layout).
@@ -64,16 +80,7 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
   @override
   void initState() {
     super.initState();
-    _threeJs = three.ThreeJS(
-      onSetupComplete: () => setState(() {}),
-      setup: _setup,
-      size: Size(widget.size, widget.size),
-      renderNumber: _instanceCount++,
-      // Transparent clear color so the cube composites over whatever
-      // background the page around it uses, instead of painting its own
-      // opaque backdrop.
-      settings: three.Settings(alpha: true, clearAlpha: 0),
-    );
+    _threeJs = _createThreeJs();
   }
 
   /// Subscribes to route visibility so rendering can pause while another
@@ -106,6 +113,16 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
   }
 
   /// Resumes rendering once this page is uncovered again.
+  ///
+  /// This used to fully dispose and recreate the render surface here
+  /// instead of just resuming it, to work around a sizing glitch on
+  /// return - but disposing one `ThreeJS`'s native GL/texture resources
+  /// while constructing a new one raced the shared ANGLE context badly
+  /// enough that a touch landing in that window (exactly what
+  /// `OrbitControls` listens for) could hard-lock the native GPU thread,
+  /// freezing the whole device. A mis-sized cube is a cosmetic problem;
+  /// that isn't, so this goes back to the simple resume until there's a
+  /// safer fix for the sizing glitch.
   @override
   void didPopNext() {
     _threeJs.isVisibleOnScreen = true;
@@ -118,6 +135,19 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
   // ---------------------------------------------------------------------
   // Implementation
   // ---------------------------------------------------------------------
+
+  three.ThreeJS _createThreeJs() {
+    return three.ThreeJS(
+      onSetupComplete: () => setState(() {}),
+      setup: _setup,
+      size: Size(widget.size, widget.size),
+      renderNumber: _instanceCount++,
+      // Transparent clear color so the cube composites over whatever
+      // background the page around it uses, instead of painting its own
+      // opaque backdrop.
+      settings: three.Settings(alpha: true, clearAlpha: 0),
+    );
+  }
 
   /// Builds the camera, lighting, orbit controls, and the cube itself.
   Future<void> _setup() async {
@@ -145,24 +175,39 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
 
     _threeJs.addAnimationEvent((dt) {
       _controls.update();
+      _syncStickerColors();
     });
   }
 
   /// Places 26 cubies (all `[-1,0,1]^3` grid positions except the hidden
   /// center) and, for each cubie face that sits on the cube's outer
   /// boundary, a colored sticker plane facing outward.
+  ///
+  /// Each sticker's `(row, col)` on its face is derived directly from the
+  /// cubie's grid position - e.g. the F face has zi=1 fixed, and its
+  /// in-plane axes (xi, yi) map to (col, row) via `col = xi + 1`,
+  /// `row = 1 - yi` (yi=1, the top row in world space, is row 0). The
+  /// mapping differs per face (see the per-face branches below) but always
+  /// puts the center cubie (the varying axes both 0) at (row 1, col 1),
+  /// matching [RubiksCube3D.faces]'s `[face][row][col]` convention.
   void _buildCube() {
     final bodyMaterial = three.MeshPhongMaterial.fromMap({
       'color': 0x0a0a0a,
       'shininess': 10,
     });
-    final stickerMaterials = {
+    _stickerMaterials = [
       for (final face in Face.values)
-        face: three.MeshPhongMaterial.fromMap({
-          'color': _toHex24(face.defaultColor),
-          'shininess': 40,
-        }),
-    };
+        [
+          for (var row = 0; row < 3; row++)
+            [
+              for (var col = 0; col < 3; col++)
+                three.MeshPhongMaterial.fromMap({
+                  'color': _hexFor(face, row, col),
+                  'shininess': 40,
+                }),
+            ],
+        ],
+    ];
     final stickerSize = _cubieSize - _stickerMargin * 2;
     const stickerOffset = _cubieSize / 2 + 0.005;
 
@@ -182,28 +227,53 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
           _threeJs.scene.add(body);
 
           if (xi == 1) {
-            _addSticker(stickerMaterials[Face.R]!, stickerSize,
-                cx + stickerOffset, cy, cz, rotationY: math.pi / 2);
+            _addSticker(
+                _stickerMaterials[Face.R.index][1 - yi][1 - zi],
+                stickerSize,
+                cx + stickerOffset,
+                cy,
+                cz,
+                rotationY: math.pi / 2);
           }
           if (xi == -1) {
-            _addSticker(stickerMaterials[Face.L]!, stickerSize,
-                cx - stickerOffset, cy, cz, rotationY: -math.pi / 2);
+            _addSticker(
+                _stickerMaterials[Face.L.index][1 - yi][zi + 1],
+                stickerSize,
+                cx - stickerOffset,
+                cy,
+                cz,
+                rotationY: -math.pi / 2);
           }
           if (yi == 1) {
-            _addSticker(stickerMaterials[Face.U]!, stickerSize, cx,
-                cy + stickerOffset, cz, rotationX: -math.pi / 2);
+            _addSticker(
+                _stickerMaterials[Face.U.index][zi + 1][xi + 1],
+                stickerSize,
+                cx,
+                cy + stickerOffset,
+                cz,
+                rotationX: -math.pi / 2);
           }
           if (yi == -1) {
-            _addSticker(stickerMaterials[Face.D]!, stickerSize, cx,
-                cy - stickerOffset, cz, rotationX: math.pi / 2);
+            _addSticker(
+                _stickerMaterials[Face.D.index][1 - zi][xi + 1],
+                stickerSize,
+                cx,
+                cy - stickerOffset,
+                cz,
+                rotationX: math.pi / 2);
           }
           if (zi == 1) {
-            _addSticker(
-                stickerMaterials[Face.F]!, stickerSize, cx, cy, cz + stickerOffset);
+            _addSticker(_stickerMaterials[Face.F.index][1 - yi][xi + 1],
+                stickerSize, cx, cy, cz + stickerOffset);
           }
           if (zi == -1) {
-            _addSticker(stickerMaterials[Face.B]!, stickerSize, cx, cy,
-                cz - stickerOffset, rotationY: math.pi);
+            _addSticker(
+                _stickerMaterials[Face.B.index][1 - yi][1 - xi],
+                stickerSize,
+                cx,
+                cy,
+                cz - stickerOffset,
+                rotationY: math.pi);
           }
         }
       }
@@ -227,6 +297,34 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
     sticker.rotation.x = rotationX;
     sticker.rotation.y = rotationY;
     _threeJs.scene.add(sticker);
+  }
+
+  /// Re-reads [RubiksCube3D.faces] and pushes any changed sticker colors
+  /// into their materials. Runs once per frame (see [_setup]) rather than
+  /// only on prop changes, since [RubiksCube3D.faces] is typically the same
+  /// long-lived `List` the caller paints into in place (e.g. manual fill),
+  /// not a freshly-allocated one each time - a `didUpdateWidget` reference
+  /// check wouldn't see those in-place edits at all.
+  void _syncStickerColors() {
+    for (final face in Face.values) {
+      for (var row = 0; row < 3; row++) {
+        for (var col = 0; col < 3; col++) {
+          _stickerMaterials[face.index][row][col]
+              .color
+              .setFromHex32(_hexFor(face, row, col));
+        }
+      }
+    }
+  }
+
+  /// Resolves the sticker color for `(face, row, col)`: [RubiksCube3D.faces]
+  /// when given (falling back to [_emptyStickerHex] for a still-null cell),
+  /// otherwise the default solved-cube color for that face.
+  int _hexFor(Face face, int row, int col) {
+    final faces = widget.faces;
+    if (faces == null) return _toHex24(face.defaultColor);
+    final color = faces[face.index][row][col];
+    return color != null ? _toHex24(color) : _emptyStickerHex;
   }
 
   /// Converts a Flutter [Color] to a 0xRRGGBB int, as most three_js

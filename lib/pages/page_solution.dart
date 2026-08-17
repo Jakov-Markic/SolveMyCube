@@ -73,7 +73,7 @@ class _PageSolutionState extends State<PageSolution> {
                   border: Border.all(color: theme.colorScheme.outlineVariant),
                 ),
                 alignment: Alignment.center,
-                child: const RubiksCube3D(size: 220),
+                child: RubiksCube3D(size: 220, faces: currentFaces),
               ),
               const SizedBox(height: 20),
               Row(

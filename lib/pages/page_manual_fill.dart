@@ -63,7 +63,7 @@ class _PageManualFillState extends State<PageManualFill> {
             color: theme.colorScheme.outlineVariant,
             thickness: 2,
           ),
-          const RubiksCube3D(size: 180),
+          RubiksCube3D(size: 180, faces: _allFaces),
           RubiksFace(
             selectedColor: _selectedColor,
             activeColors: _activeColors,
