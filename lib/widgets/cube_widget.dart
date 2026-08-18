@@ -1,15 +1,10 @@
 import 'package:flutter/material.dart';
 import '../pages/page_cube.dart';
 
-/// Cube sizes the solver actually supports right now. Anything else still
-/// shows up in the grid (so people know it's coming) but is dimmed and
-/// bounces the user with a toast instead of opening [PageCube].
+/// Available cube sizes in app
 const Set<String> kAvailableCubeSizes = {'3x3'};
 
 /// A tappable tile on the home grid representing one cube size.
-///
-/// Opens [PageCube] for [title] when tapped, unless [title] isn't in
-/// [kAvailableCubeSizes] yet, in which case it shows a "not available" toast.
 class CubeWidget extends StatefulWidget {
   final String title;
 
@@ -20,7 +15,6 @@ class CubeWidget extends StatefulWidget {
 }
 
 class _CubeWidgetState extends State<CubeWidget> {
-  /// Builds the gradient tile with its size label.
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -59,10 +53,6 @@ class _CubeWidgetState extends State<CubeWidget> {
       ),
     );
   }
-
-  // ---------------------------------------------------------------------
-  // Implementation
-  // ---------------------------------------------------------------------
 
   /// Whether [title] is one of the currently supported cube sizes.
   bool get _isAvailable => kAvailableCubeSizes.contains(widget.title);

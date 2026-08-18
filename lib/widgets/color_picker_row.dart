@@ -1,12 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Horizontal strip of selectable sticker colors plus a palette-edit button.
-///
-/// Fully controlled by [selectedColor]/[onColorSelected] - which tile is
-/// highlighted is derived from the current color rather than tracked as
-/// separate internal state, so the row stays in sync when [activeColors] is
-/// replaced by the palette editor (e.g. no stale "selected index 2" pointing
-/// at a color that's no longer in the palette).
+
 class ColorPickerRow extends StatelessWidget {
   final List<Color> activeColors;
   final Color selectedColor;
@@ -23,7 +18,6 @@ class ColorPickerRow extends StatelessWidget {
     required this.cellsRemainingNotifier,
   });
 
-  /// Builds the edit button followed by one [ColorPickerTile] per active color.
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -66,8 +60,7 @@ class ColorPickerRow extends StatelessWidget {
   }
 }
 
-/// A single tappable color swatch showing how many stickers of that color
-/// remain to be placed (negative when more than 9 have been painted).
+/// Single color picker tile with a remaining-count number
 class ColorPickerTile extends StatelessWidget {
   final Color colorValue;
   final double height, width;

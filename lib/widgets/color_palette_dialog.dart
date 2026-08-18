@@ -1,21 +1,17 @@
 import 'package:flutter/material.dart';
 import '../cube_face.dart';
 
-/// Alternate shades for each of the 6 default sticker colors, offered
-/// alongside [kFaceColorList] in the palette editor since different cube
-/// brands commonly ship with slightly different reds/oranges/greens/etc.
+/// Alternate shades for rubik's cube
 const List<Color> kAlternateColorList = [
   Colors.pink,
   Colors.lightBlue,
-  Color(0xFFE0E0E0),
+  Colors.white70,
   Colors.deepOrange,
   Colors.teal,
   Colors.amber,
 ];
 
-/// Lets the user pick exactly 6 sticker colors from a 12-color pool (the 6
-/// current colors plus 6 common alternates), shown as two rows of 6. Pops
-/// the chosen colors (in pool order) on confirm, or null on cancel.
+/// Popup widget to pick 6 colors from all available colors (default + alternate).
 class ColorPaletteDialog extends StatefulWidget {
   final List<Color> initialSelection;
 
