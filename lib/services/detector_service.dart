@@ -212,9 +212,12 @@ class CubePoseResult {
       .map((k) => k.normalized)
       .toList(growable: false);
 
+  /// The 4 front-face corners (indices 0-3), regardless of individual
+  /// visibility - filtering by [KeypointResult.visible] used to make this
+  /// snap to an axis-aligned box the instant one corner's score dipped.
   List<Offset> get frontFaceQuadNormalized {
-    final front = keypoints.where((k) => k.visible && k.index < 4).toList();
-    front.sort((a, b) => a.index.compareTo(b.index));
+    final front = keypoints.where((k) => k.index < 4).toList()
+      ..sort((a, b) => a.index.compareTo(b.index));
     return front.map((k) => k.normalized).toList(growable: false);
   }
 }

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import 'detector_service.dart';
 
-/// One of the 8 detected cube corners, in pixel space, ready for drawing.
 class CubeVertex {
   final int index;
   final Offset position;
@@ -24,8 +23,7 @@ class CubeGeometryResult {
   final List<Offset> samplePoints;
   final Rect? bounds;
 
-  /// All 8 corners (front TL,TR,BR,BL then back TL,TR,BR,BL - same order as
-  /// RubikDetector's keypoints/object points), empty when not pose-derived.
+  /// All 8 corners going clockwise for front and back face
   final List<CubeVertex> cubeVertices;
 
   const CubeGeometryResult({
@@ -37,8 +35,7 @@ class CubeGeometryResult {
 
   bool get hasOutline => outline.length >= 4;
 
-  /// Edges of a cube wireframe, indices into [cubeVertices]: front face,
-  /// back face, then the 4 edges connecting front to back corners.
+  /// Edges of a cube 
   static const List<List<int>> wireframeEdges = [
     [0, 1], [1, 2], [2, 3], [3, 0],
     [4, 5], [5, 6], [6, 7], [7, 4],
@@ -71,28 +68,14 @@ class CubeGeometry {
           .toList(growable: false);
     }
 
-    final visible = pose.visibleKeypointsNormalized;
-    final roiOutline = _rectToOutline(
-      Rect.fromLTWH(
-        pose.roiNormalized.left * scaleX,
-        pose.roiNormalized.top * scaleY,
-        pose.roiNormalized.width * scaleX,
-        pose.roiNormalized.height * scaleY,
-      ),
-    );
+    // Always the raw 4-corner quad, never an axis-aligned box fallback.
+    var outline = pose.frontFaceQuadNormalized.length >= 4
+        ? toPixel(pose.frontFaceQuadNormalized.take(4).toList())
+        : const <Offset>[];
 
-    List<Offset> outline;
-    if (pose.frontFaceQuadNormalized.length >= 4) {
-      outline = toPixel(pose.frontFaceQuadNormalized.take(4).toList());
-    } else if (visible.length >= 4) {
-      outline = _axisAlignedRectangle(toPixel(visible));
-    } else {
-      outline = roiOutline;
-    }
-
-    final area = _polygonAreaAbs(outline);
-    if (outline.length < 4 || area < 20.0) {
-      outline = roiOutline;
+    if (outline.length >= 4 && _polygonAreaAbs(outline) < 20.0) {
+      // Degenerate (near-zero-area) quad - not trustworthy to draw at all.
+      outline = const <Offset>[];
     }
 
     final samplePoints = outline.length == 4
@@ -216,15 +199,6 @@ class CubeGeometry {
       Offset(bounds.right, bounds.top),
       Offset(bounds.right, bounds.bottom),
       Offset(bounds.left, bounds.bottom),
-    ];
-  }
-
-  static List<Offset> _rectToOutline(Rect rect) {
-    return [
-      Offset(rect.left, rect.top),
-      Offset(rect.right, rect.top),
-      Offset(rect.right, rect.bottom),
-      Offset(rect.left, rect.bottom),
     ];
   }
 
@@ -386,6 +360,69 @@ class CubeGeometry {
   }
 }
 
+/// Fits [sourceSize] into [targetSize] like `BoxFit.cover`, after rotating
+/// it by [rotationQuarterTurns] - shared by [CubeGeometryPainter] and the
+/// camera preview background so they can't drift apart.
+class CameraCoverTransform {
+  final Size sourceSize;
+  final int rotationQuarterTurns;
+  final double scale;
+  final double offsetX;
+  final double offsetY;
+  final double rotatedWidth;
+  final double rotatedHeight;
+
+  CameraCoverTransform(
+    this.sourceSize,
+    Size targetSize, {
+    this.rotationQuarterTurns = 0,
+  })  : rotatedWidth = rotationQuarterTurns.isOdd ? sourceSize.height : sourceSize.width,
+        rotatedHeight = rotationQuarterTurns.isOdd ? sourceSize.width : sourceSize.height,
+        scale = _coverScale(sourceSize, rotationQuarterTurns, targetSize),
+        offsetX = _coverOffsetX(sourceSize, rotationQuarterTurns, targetSize),
+        offsetY = _coverOffsetY(sourceSize, rotationQuarterTurns, targetSize);
+
+  static double _coverScale(Size source, int turns, Size target) {
+    final w = turns.isOdd ? source.height : source.width;
+    final h = turns.isOdd ? source.width : source.height;
+    if (w <= 0 || h <= 0) return 1.0;
+    return math.max(target.width / w, target.height / h);
+  }
+
+  static double _coverOffsetX(Size source, int turns, Size target) {
+    final w = turns.isOdd ? source.height : source.width;
+    return (target.width - w * _coverScale(source, turns, target)) / 2.0;
+  }
+
+  static double _coverOffsetY(Size source, int turns, Size target) {
+    final h = turns.isOdd ? source.width : source.height;
+    return (target.height - h * _coverScale(source, turns, target)) / 2.0;
+  }
+
+  double get displayWidth => rotatedWidth * scale;
+  double get displayHeight => rotatedHeight * scale;
+
+  Offset _rotate(Offset point) {
+    switch (rotationQuarterTurns % 4) {
+      case 1:
+        return Offset(point.dy, sourceSize.width - point.dx);
+      case 2:
+        return Offset(sourceSize.width - point.dx, sourceSize.height - point.dy);
+      case 3:
+        return Offset(sourceSize.height - point.dy, point.dx);
+      default:
+        return point;
+    }
+  }
+
+  /// Maps a point in [sourceSize]'s (pre-rotation) pixel space onto the
+  /// target canvas/widget space.
+  Offset mapPoint(Offset point) {
+    final rotated = _rotate(point);
+    return Offset(rotated.dx * scale + offsetX, rotated.dy * scale + offsetY);
+  }
+}
+
 class CubeGeometryPainter extends CustomPainter {
   final CubeGeometryResult geometry;
   final Size sourceSize;
@@ -417,53 +454,12 @@ class CubeGeometryPainter extends CustomPainter {
       return;
     }
 
-    final scale = math.max(
-      size.width / sourceSize.width,
-      size.height / sourceSize.height,
+    final transform = CameraCoverTransform(
+      sourceSize,
+      size,
+      rotationQuarterTurns: rotationQuarterTurns,
     );
-    final displayWidth = sourceSize.width * scale;
-    final displayHeight = sourceSize.height * scale;
-    final offsetX = (size.width - displayWidth) / 2.0;
-    final offsetY = (size.height - displayHeight) / 2.0;
-
-    Offset rotatePoint(Offset point) {
-      switch (rotationQuarterTurns % 4) {
-        case 1:
-          return Offset(point.dy, sourceSize.width - point.dx);
-        case 2:
-          return Offset(
-            sourceSize.width - point.dx,
-            sourceSize.height - point.dy,
-          );
-        case 3:
-          return Offset(sourceSize.height - point.dy, point.dx);
-        default:
-          return point;
-      }
-    }
-
-    Offset mapPoint(Offset point) {
-      final rotated = rotatePoint(point);
-      final adjustedWidth = rotationQuarterTurns.isOdd
-          ? sourceSize.height
-          : sourceSize.width;
-      final adjustedHeight = rotationQuarterTurns.isOdd
-          ? sourceSize.width
-          : sourceSize.height;
-      final adjustedScale = math.max(
-        size.width / adjustedWidth,
-        size.height / adjustedHeight,
-      );
-      final displayedWidth = adjustedWidth * adjustedScale;
-      final displayedHeight = adjustedHeight * adjustedScale;
-      final adjustedOffsetX = (size.width - displayedWidth) / 2.0;
-      final adjustedOffsetY = (size.height - displayedHeight) / 2.0;
-
-      return Offset(
-        rotated.dx * adjustedScale + adjustedOffsetX,
-        rotated.dy * adjustedScale + adjustedOffsetY,
-      );
-    }
+    Offset mapPoint(Offset point) => transform.mapPoint(point);
 
     // Kept very transparent (roughly 90%) so the overlay stays out of the
     // way of the actual camera view it's annotating.

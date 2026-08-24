@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -19,13 +20,19 @@ class RubiksCube3D extends StatefulWidget {
 }
 
 class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
-  static int _instanceCount = 0;
-
   /// Default hex value for sticker with no color
   static const int _emptyStickerHex = 0x30414c;
 
-  late three.ThreeJS _threeJs;
-  late three.OrbitControls _controls;
+  /// Serializes native GL create/dispose across all instances - two alive
+  /// at once previously raced the shared context and could freeze the GPU.
+  static Future<void> _gpuQueue = Future.value();
+
+  static void _enqueue(FutureOr<void> Function() action) {
+    _gpuQueue = _gpuQueue.then((_) => action()).catchError((_) {});
+  }
+
+  three.ThreeJS? _threeJs;
+  three.OrbitControls? _controls;
 
   /// Materials for each sticker
   late List<List<List<three.Material>>> _stickerMaterials;
@@ -39,7 +46,7 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
   @override
   void initState() {
     super.initState();
-    _threeJs = _createThreeJs();
+    _scheduleConstruct();
   }
 
   /// Subscribes to route visibility so rendering can pause while another page covers this one
@@ -55,33 +62,65 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
   @override
   void dispose() {
     globalRouteObserver.unsubscribe(this);
-    _controls.dispose();
-    _threeJs.dispose();
+    _scheduleDispose(rebuild: false);
     super.dispose();
   }
 
-  /// Stops this cube from rendering once a pushed route covers it
+  /// Fully tears down the native context once covered, instead of just pausing.
   @override
   void didPushNext() {
-    _threeJs.isVisibleOnScreen = false;
+    _threeJs?.isVisibleOnScreen = false;
+    _scheduleDispose(rebuild: true);
   }
 
-  /// Resumes rendering once this page is uncovered again.
+  /// Constructs a fresh instance so it can never inherit a stale/shrunk size.
   @override
   void didPopNext() {
-    _threeJs.isVisibleOnScreen = true;
+    _scheduleConstruct();
   }
 
-  /// Hands the whole widget surface over to the three_js renderer.
-  @override
-  Widget build(BuildContext context) => _threeJs.build();
+  void _scheduleConstruct() {
+    _enqueue(() async {
+      if (!mounted) return;
+      final completer = Completer<void>();
+      final threeJs = _createThreeJs(onReady: () => completer.complete());
+      setState(() => _threeJs = threeJs);
+      await completer.future;
+    });
+  }
 
-  three.ThreeJS _createThreeJs() {
+  void _scheduleDispose({required bool rebuild}) {
+    final threeJs = _threeJs;
+    final controls = _controls;
+    if (threeJs == null) return;
+    _threeJs = null;
+    _controls = null;
+    if (rebuild && mounted) setState(() {});
+    _enqueue(() {
+      controls?.dispose();
+      threeJs.dispose();
+    });
+  }
+
+  /// The three_js surface, or a same-sized placeholder mid construct/dispose.
+  @override
+  Widget build(BuildContext context) {
+    final threeJs = _threeJs;
+    return threeJs == null
+        ? SizedBox(width: widget.size, height: widget.size)
+        : threeJs.build();
+  }
+
+  three.ThreeJS _createThreeJs({required VoidCallback onReady}) {
     return three.ThreeJS(
-      onSetupComplete: () => setState(() {}),
+      onSetupComplete: () {
+        onReady();
+        if (mounted) setState(() {});
+      },
       setup: _setup,
       size: Size(widget.size, widget.size),
-      renderNumber: _instanceCount++,
+      // The GPU queue above already prevents concurrent init, no stagger needed.
+      renderNumber: 0,
       // Transparent color
       settings: three.Settings(alpha: true, clearAlpha: 0),
     );
@@ -89,27 +128,28 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
 
   /// Builds the camera, lighting, orbit controls, and the cube itself.
   Future<void> _setup() async {
-    _threeJs.camera = three.PerspectiveCamera(
+    final threeJs = _threeJs!;
+    threeJs.camera = three.PerspectiveCamera(
       45,
-      _threeJs.width / _threeJs.height,
+      threeJs.width / threeJs.height,
       0.1,
       100,
     );
-    _threeJs.camera.position.setValues(4.5, 4.5, 6.5);
+    threeJs.camera.position.setValues(4.5, 4.5, 6.5);
 
-    _controls = three.OrbitControls(_threeJs.camera, _threeJs.globalKey);
+    _controls = three.OrbitControls(threeJs.camera, threeJs.globalKey);
 
-    _threeJs.scene = three.Scene();
+    threeJs.scene = three.Scene();
 
-    _threeJs.scene.add(three.AmbientLight(0xffffff, 0.6));
+    threeJs.scene.add(three.AmbientLight(0xffffff, 0.6));
     final keyLight = three.DirectionalLight(0xffffff, 0.8);
     keyLight.position.setValues(5, 8, 6);
-    _threeJs.scene.add(keyLight);
+    threeJs.scene.add(keyLight);
 
-    _buildCube();
+    _buildCube(threeJs);
 
-    _threeJs.addAnimationEvent((dt) {
-      _controls.update();
+    threeJs.addAnimationEvent((dt) {
+      _controls?.update();
       _syncStickerColors();
     });
   }
@@ -117,7 +157,7 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
   /// Places 26 cubies (all `[-1,0,1]^3` grid positions except the hidden
   /// center) and, for each cubie face that sits on the cube's outer
   /// boundary, a colored sticker plane facing outward.
-  void _buildCube() {
+  void _buildCube(three.ThreeJS threeJs) {
     final bodyMaterial = three.MeshPhongMaterial.fromMap({
       'color': 0x0a0a0a,
       'shininess': 10,
@@ -151,10 +191,11 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
             bodyMaterial,
           );
           body.position.setValues(cx, cy, cz);
-          _threeJs.scene.add(body);
+          threeJs.scene.add(body);
 
           if (xi == 1) {
             _addSticker(
+                threeJs,
                 _stickerMaterials[Face.R.index][1 - yi][1 - zi],
                 stickerSize,
                 cx + stickerOffset,
@@ -164,6 +205,7 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
           }
           if (xi == -1) {
             _addSticker(
+                threeJs,
                 _stickerMaterials[Face.L.index][1 - yi][zi + 1],
                 stickerSize,
                 cx - stickerOffset,
@@ -173,6 +215,7 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
           }
           if (yi == 1) {
             _addSticker(
+                threeJs,
                 _stickerMaterials[Face.U.index][zi + 1][xi + 1],
                 stickerSize,
                 cx,
@@ -182,6 +225,7 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
           }
           if (yi == -1) {
             _addSticker(
+                threeJs,
                 _stickerMaterials[Face.D.index][1 - zi][xi + 1],
                 stickerSize,
                 cx,
@@ -190,11 +234,17 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
                 rotationX: math.pi / 2);
           }
           if (zi == 1) {
-            _addSticker(_stickerMaterials[Face.F.index][1 - yi][xi + 1],
-                stickerSize, cx, cy, cz + stickerOffset);
+            _addSticker(
+                threeJs,
+                _stickerMaterials[Face.F.index][1 - yi][xi + 1],
+                stickerSize,
+                cx,
+                cy,
+                cz + stickerOffset);
           }
           if (zi == -1) {
             _addSticker(
+                threeJs,
                 _stickerMaterials[Face.B.index][1 - yi][1 - xi],
                 stickerSize,
                 cx,
@@ -209,6 +259,7 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
 
   /// Adds a single sticker plane at ([x], [y], [z]), rotated to face x and y rotation
   void _addSticker(
+    three.ThreeJS threeJs,
     three.Material material,
     double size,
     double x,
@@ -221,7 +272,7 @@ class _RubiksCube3DState extends State<RubiksCube3D> with RouteAware {
     sticker.position.setValues(x, y, z);
     sticker.rotation.x = rotationX;
     sticker.rotation.y = rotationY;
-    _threeJs.scene.add(sticker);
+    threeJs.scene.add(sticker);
   }
 
   /// Updates all sticker colors

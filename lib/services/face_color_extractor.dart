@@ -38,13 +38,14 @@ class FaceColorExtractor {
   /// topRight, bottomRight, bottomLeft, in [image]-pixel coordinates),
   /// samples [pointsPerCell] points spread across that sticker (small patch
   /// average at each, to also smooth out sensor noise), averages them
-  /// together, and classifies the result against the 6 canonical cube
-  /// sticker colors.
+  /// together, and classifies the result against [referenceColors] (defaults
+  /// to the fixed 6 canonical cube sticker colors).
   static List<List<SampledSticker>> extract(
     img.Image image,
     List<Offset> quad, {
     int pointsPerCell = defaultPointsPerCell,
     int patchRadius = 4,
+    Map<Face, Color> referenceColors = kFaceColors,
   }) {
     if (quad.length < 4) {
       throw ArgumentError(
@@ -61,7 +62,7 @@ class FaceColorExtractor {
           pointsPerCell: pointsPerCell,
         );
         final avg = _averageMultiPoint(image, points, patchRadius);
-        final match = _classify(avg);
+        final match = _classify(avg, referenceColors);
         return SampledSticker(
           sampledColor: avg,
           classifiedFace: match.face,
@@ -73,19 +74,23 @@ class FaceColorExtractor {
 
   /// Convenience wrapper over [extract] for callers that just want a
   /// grid of colors to store (e.g. into a `List<List<Color?>>` face slot):
-  /// classified colors above [minConfidence], null otherwise.
+  /// classified colors above [minConfidence], null otherwise. Always stores
+  /// the canonical [kFaceColors] value for the matched identity, even when
+  /// classification was judged against a calibrated [referenceColors].
   static List<List<Color?>> extractClassified(
     img.Image image,
     List<Offset> quad, {
     int pointsPerCell = defaultPointsPerCell,
     int patchRadius = 4,
     double minConfidence = defaultMinConfidence,
+    Map<Face, Color> referenceColors = kFaceColors,
   }) {
     final sampled = extract(
       image,
       quad,
       pointsPerCell: pointsPerCell,
       patchRadius: patchRadius,
+      referenceColors: referenceColors,
     );
     return sampled
         .map(
@@ -156,13 +161,16 @@ class FaceColorExtractor {
     return (r: rSum ~/ count, g: gSum ~/ count, b: bSum ~/ count);
   }
 
-  static ({Face? face, double confidence}) _classify(Color sampled) {
+  static ({Face? face, double confidence}) _classify(
+    Color sampled,
+    Map<Face, Color> referenceColors,
+  ) {
     final hsv = HSVColor.fromColor(sampled);
 
     Face? bestFace;
     var bestDistance = double.infinity;
     for (final face in Face.values) {
-      final refHsv = HSVColor.fromColor(kFaceColors[face]!);
+      final refHsv = HSVColor.fromColor(referenceColors[face] ?? kFaceColors[face]!);
       final distance = _hsvDistance(hsv, refHsv);
       if (distance < bestDistance) {
         bestDistance = distance;
