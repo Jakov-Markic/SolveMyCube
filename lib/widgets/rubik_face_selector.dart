@@ -1,13 +1,8 @@
 import 'package:flutter/material.dart';
 import '../cube_face.dart';
 
-/// F/R/U/B/L/D face picker.
-///
-/// Fully controlled by [selectedFace]/[onFaceChanged] - no internal state,
-/// so any parent (manual fill, the live camera scan, the solution viewer)
-/// can drive and observe which face is selected.
+/// Rubik's cube face picker.
 class RubikFaceSelector extends StatelessWidget {
-  /// The face currently highlighted as active.
   final Face selectedFace;
 
   /// Called with the tapped face.
@@ -19,7 +14,6 @@ class RubikFaceSelector extends StatelessWidget {
     required this.onFaceChanged,
   });
 
-  /// Builds one button per [Face], highlighting [selectedFace].
   @override
   Widget build(BuildContext context) {
     return Column(

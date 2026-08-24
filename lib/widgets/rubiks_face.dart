@@ -3,11 +3,7 @@ import '../cube_face.dart';
 import 'rubiks_grid_view.dart';
 import 'rubik_face_selector.dart';
 
-/// Shows the selected face's 3x3 grid alongside the F/R/U/B/L/D selector.
-///
-/// Fully controlled by [selectedFace]/[onFaceChanged] - the caller owns
-/// which face is "current" (this used to be private internal state, which
-/// meant a parent had no way to know or drive which face was being edited).
+/// Shows the selected face's 3x3 grid with the face selector.
 class RubiksFace extends StatelessWidget {
   final Color selectedColor;
   final List<Color>? activeColors;
@@ -28,7 +24,6 @@ class RubiksFace extends StatelessWidget {
     required this.onFaceChanged,
   });
 
-  /// Lays out [RubiksGridView] next to [RubikFaceSelector].
   @override
   Widget build(BuildContext context) {
     return Row(

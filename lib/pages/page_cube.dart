@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:solve_my_cube/globals.dart';
 import 'package:solve_my_cube/pages/page_manual_fill.dart';
+import '../widgets/widgets.dart';
 import './page_camera.dart';
 
 /// Entry point for a single cube size: preview plus buttons to scan it with
@@ -23,17 +24,7 @@ class PageCube extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           spacing: 24,
           children: [
-            Container(
-              width: 400,
-              height: 400,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              /* margin: EdgeInsetsGeometry.directional(
-                bottom: 24
-              ), */
-            ),
+            const RubiksCube3D(size: 400),
             ElevatedButton.icon(
               onPressed: ()=>{
                 Navigator.of(context).push(

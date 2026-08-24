@@ -50,6 +50,15 @@ class PageCameraState extends State<PageCamera> {
   // captured (not live-only) scan results per face. This is a manual stand-in
   // for real orientation tracking - see the capture flow for details.
   Face _selectedFace = Face.F;
+
+  /// Per-session reference colors, calibrated from the first high-confidence
+  /// read of each identity - corrects [kFaceColors] for this scan's lighting.
+  final Map<Face, Color> _calibratedColors = {};
+
+  /// Confidence required to lock in a calibrated color - stricter than
+  /// [FaceColorExtractor.defaultMinConfidence] since a bad read here biases
+  /// every later read of that color, not just one sticker.
+  static const double _calibrationConfidence = 0.75;
   final List<List<List<Color?>>> _scannedFaces = List<List<List<Color?>>>.generate(
     6,
     (_) => List<List<Color?>>.generate(3, (_) => List<Color?>.filled(3, null)),
@@ -610,8 +619,13 @@ class PageCameraState extends State<PageCamera> {
     for (var i = 0; i < current.keypoints.length; i++) {
       final c = current.keypoints[i];
       final p = i < prev.keypoints.length ? prev.keypoints[i] : c;
-      final cx = _lerp(p.normalized.dx, c.normalized.dx, _poseEmaAlpha);
-      final cy = _lerp(p.normalized.dy, c.normalized.dy, _poseEmaAlpha);
+      // Trust this corner's new position in proportion to its own score, so
+      // one noisy low-confidence corner can't warp the whole drawn quad.
+      final trust = (c.score / RubikDetector.keypointVisibleThreshold)
+          .clamp(0.1, 1.0);
+      final alpha = _poseEmaAlpha * trust;
+      final cx = _lerp(p.normalized.dx, c.normalized.dx, alpha);
+      final cy = _lerp(p.normalized.dy, c.normalized.dy, alpha);
       smoothedKpts.add(
         KeypointResult(
           index: c.index,
@@ -761,10 +775,42 @@ class PageCameraState extends State<PageCamera> {
       order: img.ChannelOrder.rgb,
     );
 
-    final extracted = FaceColorExtractor.extractClassified(
+    final referenceColors = {
+      for (final face in Face.values) face: _calibratedColors[face] ?? kFaceColors[face]!,
+    };
+
+    final sampled = FaceColorExtractor.extract(
       contentImage,
       captureGeometry.outline,
+      referenceColors: referenceColors,
     );
+
+    // Lock in a reference color the first time each identity is seen with
+    // high confidence this session; never overwritten afterward.
+    for (final row in sampled) {
+      for (final cell in row) {
+        final face = cell.classifiedFace;
+        if (face != null &&
+            cell.confidence >= _calibrationConfidence &&
+            !_calibratedColors.containsKey(face)) {
+          _calibratedColors[face] = cell.sampledColor;
+        }
+      }
+    }
+
+    final extracted = sampled
+        .map(
+          (row) => row
+              .map(
+                (cell) =>
+                    cell.confidence >= FaceColorExtractor.defaultMinConfidence &&
+                        cell.classifiedFace != null
+                    ? kFaceColors[cell.classifiedFace!]
+                    : null,
+              )
+              .toList(growable: false),
+        )
+        .toList(growable: false);
 
     setState(() {
       _scannedFaces[_selectedFace.index] = extracted;
@@ -785,21 +831,36 @@ class PageCameraState extends State<PageCamera> {
     );
   }
 
-  /// Renders the raw camera preview, cropped to fill its box.
+  /// Renders the camera preview, cropped to fill its box, via the same
+  /// [CameraCoverTransform] the overlay uses so the two can't disagree.
   Widget _buildCameraBackground() {
     final previewSize = _controller.value.previewSize;
-    if (previewSize == null) {
+    final sourceSize = _lastFrameSize ?? previewSize;
+    if (sourceSize == null) {
       return const SizedBox.expand();
     }
 
-    return FittedBox(
-      fit: BoxFit.cover,
-      alignment: Alignment.center,
-      child: SizedBox(
-        width: previewSize.height,
-        height: previewSize.width,
-        child: CameraPreview(_controller),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final transform = CameraCoverTransform(
+          sourceSize,
+          constraints.biggest,
+          rotationQuarterTurns: 1,
+        );
+        return ClipRect(
+          child: Stack(
+            children: [
+              Positioned(
+                left: transform.offsetX,
+                top: transform.offsetY,
+                width: transform.displayWidth,
+                height: transform.displayHeight,
+                child: CameraPreview(_controller),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

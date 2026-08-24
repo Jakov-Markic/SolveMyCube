@@ -1,14 +1,3 @@
-/*Comment what to do in future 
-1. Make title
-2. Make bottom navigation (main, timer, setting)
-- main will include grid view of all cubes that will be widgets that link to their respective page
-- timer will just be a timer used for solving
-- setting will be list of options: theme change, language option, constumer service, terms of service, etc.
-3. Make custom widget and make grid view of it
-4. (Optional) Make background of widget 3d
-
-*/
-
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -92,6 +81,7 @@ class _MainAppState extends State<MainApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [globalRouteObserver],
       themeMode: _themeMode,
       theme: AppTheme.buildTheme(
         brightness: Brightness.light,

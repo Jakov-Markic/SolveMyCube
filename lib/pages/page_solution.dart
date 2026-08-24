@@ -67,20 +67,13 @@ class _PageSolutionState extends State<PageSolution> {
             children: [
               Container(
                 width: double.infinity,
-                height: 120,
                 decoration: BoxDecoration(
                   color: theme.colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: theme.colorScheme.outlineVariant),
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  'Solution preview',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                child: RubiksCube3D(size: 220, faces: currentFaces),
               ),
               const SizedBox(height: 20),
               Row(

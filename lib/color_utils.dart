@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class ColorUtils {
-  // Compare colors with tolerance for small variations
+  /// Compare colors with tolerance for small variations
   static bool areColorsEqual(Color a, Color b, {double tolerance = 0.05}) {
     return (a.r - b.r).abs() <= tolerance &&
            (a.g - b.g).abs() <= tolerance &&
@@ -9,7 +9,7 @@ class ColorUtils {
            (a.a - b.a).abs() <= tolerance;
   }
 
-  // Get a unique string representation for signature generation
+  /// Convert a Color to a string representation (e.g., "255,0,0,255" for red)
   static String colorToString(Color color) {
     // Round to nearest integer to avoid floating point issues
     int r = color.r.round();
@@ -19,7 +19,7 @@ class ColorUtils {
     return '$r,$g,$b,$a';
   }
 
-  // Get a simple color code (0-5) for PLL signature
+  /// Get a simple color code (0-5) for PLL signature
   static int getColorCode(Color color, List<Color> centerColors) {
     for (int i = 0; i < centerColors.length; i++) {
       if (areColorsEqual(color, centerColors[i])) {

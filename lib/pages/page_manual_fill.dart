@@ -59,15 +59,11 @@ class _PageManualFillState extends State<PageManualFill> {
         crossAxisAlignment: CrossAxisAlignment.center,
         spacing: 16,
         children: [
-          Container(
-            color: theme.colorScheme.primary,
-            width: 32,
-            height: 32,
-          ),
           Divider(
             color: theme.colorScheme.outlineVariant,
             thickness: 2,
           ),
+          RubiksCube3D(size: 180, faces: _allFaces),
           RubiksFace(
             selectedColor: _selectedColor,
             activeColors: _activeColors,
