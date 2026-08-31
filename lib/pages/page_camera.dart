@@ -51,14 +51,21 @@ class PageCameraState extends State<PageCamera> {
   // for real orientation tracking - see the capture flow for details.
   Face _selectedFace = Face.F;
 
-  /// Per-session reference colors, calibrated from the first high-confidence
-  /// read of each identity - corrects [kFaceColors] for this scan's lighting.
-  final Map<Face, Color> _calibratedColors = {};
-
-  /// Confidence required to lock in a calibrated color - stricter than
-  /// [FaceColorExtractor.defaultMinConfidence] since a bad read here biases
-  /// every later read of that color, not just one sticker.
-  static const double _calibrationConfidence = 0.75;
+  // Per-session color calibration was tried twice (an EMA-updated reference
+  // per identity, gated on a confidence floor and then a plausibility floor
+  // against kMeasuredReferenceColors) and removed both times after real
+  // on-device use: any drift in one identity's reference - even from a
+  // completely legitimate read - risks encroaching on whichever other
+  // identity sits closest to it. White (closest to neutral of all 6) and
+  // orange/red (the closest pair to each other, confirmed since the very
+  // first accuracy check done on this classifier) both demonstrated the
+  // failure concretely: a single clean, correctly-classified read of one
+  // color started stealing a different color's later reads, with *rising*
+  // confidence, not falling. No floor on the read itself can catch this,
+  // because the read genuinely is a good instance of its own color - the
+  // danger is entirely in how close that color's true reference sits to its
+  // neighbor's, which a per-read plausibility check has no way to see.
+  // Classification now always uses the fixed kMeasuredReferenceColors.
   final List<List<List<Color?>>> _scannedFaces = List<List<List<Color?>>>.generate(
     6,
     (_) => List<List<Color?>>.generate(3, (_) => List<Color?>.filled(3, null)),
@@ -775,28 +782,10 @@ class PageCameraState extends State<PageCamera> {
       order: img.ChannelOrder.rgb,
     );
 
-    final referenceColors = {
-      for (final face in Face.values) face: _calibratedColors[face] ?? kFaceColors[face]!,
-    };
-
     final sampled = FaceColorExtractor.extract(
       contentImage,
       captureGeometry.outline,
-      referenceColors: referenceColors,
     );
-
-    // Lock in a reference color the first time each identity is seen with
-    // high confidence this session; never overwritten afterward.
-    for (final row in sampled) {
-      for (final cell in row) {
-        final face = cell.classifiedFace;
-        if (face != null &&
-            cell.confidence >= _calibrationConfidence &&
-            !_calibratedColors.containsKey(face)) {
-          _calibratedColors[face] = cell.sampledColor;
-        }
-      }
-    }
 
     final extracted = sampled
         .map(
